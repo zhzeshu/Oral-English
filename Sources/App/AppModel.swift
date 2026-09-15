@@ -10,6 +10,7 @@ public final class AppModel {
     // MARK: - Dependencies
 
     public let settings: Settings
+    public let permissions = PermissionService()
     public private(set) var store: PassageStore
     private let lock: LibraryLock
 
@@ -61,8 +62,10 @@ public final class AppModel {
         }
         do {
             try await store.ensureLibrary()
+            // Status only, no prompt. Nothing asks for a permission at launch.
+            permissions.refresh()
             libraryIsSynced = await store.isInUbiquitousContainer()
-            if libraryIsSynced { banner = .librarySynced }
+            refreshBanner()
             await reloadSummaries()
             if let last = settings.lastPassageFolder,
                summaries.contains(where: { $0.folderName == last }) {
@@ -79,6 +82,32 @@ public final class AppModel {
 
     public func shutdown() {
         lock.release()
+    }
+
+    /// Recomputed from state, with permission problems always outranking advisory notes —
+    /// so a dismissed voice nag can never hide a denied microphone.
+    public func refreshBanner() {
+        var candidates: [BannerKind] = []
+        if let p = permissions.matrix.banner { candidates.append(p) }
+        if libraryIsSynced { candidates.append(.librarySynced) }
+        if voiceNeedsAttention && !settings.voiceBannerDismissed { candidates.append(.voiceQuality) }
+        banner = candidates.min()
+    }
+
+    /// Set by the voice catalog in item 07.
+    public var voiceNeedsAttention = false
+
+    /// Called on the first record tap, never at launch.
+    public func requestRecordingPermissions() async -> PermissionMatrix {
+        let matrix = await permissions.requestForRecording()
+        refreshBanner()
+        return matrix
+    }
+
+    /// Re-read on wake: privacy state can change while the machine is asleep.
+    public func permissionsMayHaveChanged() {
+        permissions.refresh()
+        refreshBanner()
     }
 
     // MARK: - Library
@@ -263,38 +292,5 @@ public final class AppModel {
         let values = visibleTargets.compactMap { rowSummaries[$0]?.bestAccuracy }
         guard !values.isEmpty else { return nil }
         return values.reduce(0, +) / Double(values.count)
-    }
-}
-
-/// Banner kinds with an explicit priority order.
-///
-/// Revision 1 had four items writing to one banner with no owner and no precedence, and
-/// specified its lifetime twice inconsistently — so a dismissed voice nag could hide a
-/// permission problem. Permission kinds are never dismissible.
-public enum BannerKind: Sendable, Equatable, Comparable {
-    case micDenied
-    case recognitionDenied
-    case offlineModelMissing
-    case librarySynced
-    case voiceQuality
-
-    /// Lower sorts first and wins.
-    var priority: Int {
-        switch self {
-        case .micDenied: return 0
-        case .recognitionDenied: return 1
-        case .offlineModelMissing: return 2
-        case .librarySynced: return 3
-        case .voiceQuality: return 4
-        }
-    }
-
-    public static func < (a: BannerKind, b: BannerKind) -> Bool { a.priority < b.priority }
-
-    public var isDismissible: Bool {
-        switch self {
-        case .micDenied, .recognitionDenied, .offlineModelMissing: return false
-        case .librarySynced, .voiceQuality: return true
-        }
     }
 }

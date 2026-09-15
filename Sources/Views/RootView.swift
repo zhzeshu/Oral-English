@@ -13,7 +13,7 @@ struct RootView: View {
                     BannerView(
                         kind: kind,
                         onAction: { bannerAction(kind) },
-                        onDismiss: { dismissBanner(kind) }
+                        onDismiss: { dismissBannerIfAllowed(kind) }
                     )
                 }
                 PassageDetailView(showingNewPassage: $showingNewPassage)
@@ -56,9 +56,11 @@ struct RootView: View {
         }
     }
 
-    private func dismissBanner(_ kind: BannerKind) {
+    private func dismissBannerIfAllowed(_ kind: BannerKind) {
         guard kind.isDismissible else { return }
         if kind == .voiceQuality { model.settings.voiceBannerDismissed = true }
-        model.banner = nil
+        model.refreshBanner()
     }
+
+
 }

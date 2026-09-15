@@ -1,5 +1,15 @@
 # 06 — Permissions
 
+**Status:** DONE — 2026-09-14 (five gates BLOCKED on the user, see below)
+**Changed:** Sources/Core/PermissionMatrix.swift, Sources/Core/BannerKind.swift,
+Sources/Services/PermissionService.swift, Sources/App/AppModel.swift,
+Sources/Views/RootView.swift, Sources/Tools/PermissionProbe.swift,
+Tests/PermissionMatrixTests.swift
+**Verified:** ./test.sh (185 tests in 11 suites passed, including all 75 combinations of the
+matrix), ./build.sh clean, ./probe.sh PermissionProbe
+**Blocked gates:** granting and denying permissions needs a human clicking in System
+Settings. The decision logic is fully tested; the dialogs are not.
+
 **Verification style:** checklist, exercised by actually denying things. The degradation
 matrix itself is a pure function and is unit-tested.
 
@@ -77,15 +87,43 @@ inline with a re-record button.
 
 ## Done when
 
-- [ ] `./test.sh` passes, including every matrix combination.
-- [ ] First record tap prompts for the microphone, then recognition, with the Info.plist
+- [x] `./test.sh` passes, including every matrix combination.
+- [ ] *(BLOCKED on the user)* First record tap prompts for the microphone, then recognition, with the Info.plist
       usage strings.
-- [ ] Denying the microphone and relaunching shows the banner and a disabled record control,
+- [ ] *(BLOCKED on the user)* Denying the microphone and relaunching shows the banner and a disabled record control,
       and reference playback still works.
-- [ ] Denying only recognition leaves recording and A/B fully working.
-- [ ] Each banner button opens the correct Privacy pane.
-- [ ] Granting a permission and returning clears the banner without a relaunch.
-- [ ] Nothing prompts at launch.
-- [ ] A permission problem is visible even when the voice banner has been dismissed.
-- [ ] After a rebuild the grants are still in place. If not, the certificate is not being
+- [ ] *(BLOCKED on the user)* Denying only recognition leaves recording and A/B fully working.
+- [ ] *(BLOCKED on the user)* Each banner button opens the correct Privacy pane.
+- [ ] *(BLOCKED on the user)* Granting a permission and returning clears the banner without a relaunch.
+- [x] Nothing prompts at launch.
+- [x] A permission problem is visible even when the voice banner has been dismissed.
+- [ ] *(BLOCKED on the user)* After a rebuild the grants are still in place. If not, the certificate is not being
       used; check `codesign -dv`.
+
+
+## What the probe found
+
+The reviewer's warning about locales is confirmed exactly:
+
+```
+microphone:            notDetermined
+speech recognition:    notDetermined
+offline en-US model:   available
+
+on-device recognition by locale:
+  en-US: available=true onDevice=true
+  en-GB: available=true onDevice=false
+  en-AU: available=true onDevice=false
+  zh-CN: available=true onDevice=false
+```
+
+So a naive `isAvailable` check passes for three locales that have **no on-device model**,
+and since there is deliberately no server fallback, any of them would leave scoring silently
+unavailable. Pinning `en-US` is therefore load-bearing, not a convenience.
+
+Also confirmed: constructing a recognizer for an unsupported locale writes
+`No Assistant asset for language en-GB` to stderr. **Do not enumerate locales to build a
+picker** — it spews into the system log for every one that lacks an asset.
+
+Nothing prompts at launch: the probe reads `notDetermined` for both permissions without
+producing a dialog, which is the behavior `refresh()` is designed for.
