@@ -9,8 +9,12 @@ Sources/Tools/{VoiceProbe,BakeProbe}.swift, Tests/VoiceRankingTests.swift
 ./probe.sh VoiceProbe (65935 frames, 22050 Hz mono, 8 word callbacks for 8 words, ranking
 selects Samantha), ./probe.sh BakeProbe (194 KB file, 47550 frames, 2.16 s, accepted by
 AVAudioPlayer)
-**Blocked gates:** installing a Premium voice, the blind listening test, and watching the
-highlight track the audio all need a human.
+**Update 2026-09-14:** Ava (Premium) is installed. Identifier
+`com.apple.voice.premium.en-US.Ava`, en-US, tier premium, 42 English voices now present.
+Ranking selects it automatically and the banner is no longer warranted. A blind A/B
+comparison is baked to the Desktop awaiting a verdict.
+**Blocked gates:** the listening verdict itself, and watching the highlight track the
+audio.
 
 **Verification style:** probe-first, then judged by ear against a blind control. The tier
 ranking is a pure function and is unit-tested.
@@ -130,10 +134,9 @@ the whole sentence rather than appearing broken.
 
 ## Done when
 
-- [ ] **A Premium voice is installed** and its actual identifier and tier are recorded in
-      the overview. *(BLOCKED on the user: a ~479 MB download through System Settings that
-      the app cannot trigger. The probe confirms 41 English voices installed, all lowest
-      tier, so the banner is currently warranted.)*
+- [x] **A Premium voice is installed** and its actual identifier and tier are recorded in
+      the overview: `com.apple.voice.premium.en-US.Ava`, en-US, premium. Note this differs
+      from the identifier the asset catalog advertises — see the findings.
 - [x] The probe reports non-zero frames and at least one callback per word. *(Count is not exactly one per word — see findings.)*
 - [x] `./test.sh` passes, including the ranking and range-conversion tests.
 - [ ] *(BLOCKED on the user)* **Blind A/B by ear:** bake the same sentence with the compact voice and with the
@@ -187,11 +190,28 @@ and rate per call, and the dependency points one way.
 
 | Thing | Value |
 | --- | --- |
-| Installed English voices | 41, all lowest tier |
+| Installed English voices | 42: Ava (Premium) plus 41 at the lowest tier |
 | Synthesis output | 22050 Hz, 1 channel, non-interleaved |
 | Frames for one sentence | 65,935 |
 | Baked file | 194 KB, 47,550 frames, 2.16 s, accepted by `AVAudioPlayer` |
 | Bake time | 0.28 s |
 
 Recordings are 44100 Hz, so anything feeding both into one buffer pipeline must convert.
-Item 10 does that.
+Item 10 does that. Ava also synthesizes at 22050 Hz through the write path, so installing a
+premium voice does not change that mismatch.
+
+## The installed identifier is not the advertised one
+
+The asset catalog lists Ava as `com.apple.ttsbundle.Ava`. The **installed** voice reports
+`com.apple.voice.premium.en-US.Ava`, and its display name is "Ava (Premium)" rather than
+"Ava".
+
+That matters because the family inference added earlier keyed on `com.apple.ttsbundle` for
+downloadable voices. It still selected Ava correctly, because tier outranks family and Ava
+reports as premium — but the family classification was wrong, and a rule built only from
+the catalog would have been wrong in a way nothing would have surfaced. Both prefixes are
+now recognized, and the observed identifiers are pinned by test so a refactor cannot
+quietly reclassify a real installed voice.
+
+This is also why the app matches voices by identifier rather than by display name: the name
+carries a localized "(Premium)" suffix.

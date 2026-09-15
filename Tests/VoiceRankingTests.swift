@@ -240,3 +240,59 @@ struct VoiceFamilyTests {
         #expect(VoiceRanking.best(all)?.id == Self.samantha.id)
     }
 }
+
+/// Pins the identifiers this machine actually reports, so a future refactor cannot quietly
+/// change how a real installed voice is classified.
+@Suite("VoiceRanking observed identifiers")
+struct ObservedVoiceTests {
+
+    /// The installed identifier differs from the one the asset catalog advertises. The
+    /// catalog says `com.apple.ttsbundle.Ava`; the installed voice reports
+    /// `com.apple.voice.premium.en-US.Ava`. Matching on the catalog id alone would fail.
+    static let avaAsInstalled = VoiceOption(
+        id: "com.apple.voice.premium.en-US.Ava",
+        name: "Ava (Premium)", language: "en-US", tier: .premium)
+
+    static let samanthaAsInstalled = VoiceOption(
+        id: "com.apple.voice.compact.en-US.Samantha",
+        name: "Samantha", language: "en-US", tier: .compact)
+
+    @Test("the installed premium identifier is classified as downloadable")
+    func premiumPrefixRecognized() {
+        #expect(Self.avaAsInstalled.family == .downloadable)
+        #expect(Self.samanthaAsInstalled.family == .system)
+    }
+
+    @Test("both advertised and installed premium prefixes are recognized", arguments: [
+        "com.apple.voice.premium.en-US.Ava",
+        "com.apple.voice.enhanced.en-US.Allison",
+        "com.apple.ttsbundle.Ava",
+    ])
+    func bothPrefixesRecognized(id: String) {
+        let v = VoiceOption(id: id, name: "x", language: "en-US", tier: .premium)
+        #expect(v.family == .downloadable, "\(id) was classified \(v.family)")
+    }
+
+    /// The realistic post-install set, exactly as this machine reports it.
+    @Test("with Ava installed, ranking selects Ava over all 41 preinstalled voices")
+    func avaWinsAgainstTheRealSet() {
+        let novelty = ["Albert", "Bad News", "Bells", "Bubbles", "Trinoids", "Zarvox", "Jester",
+                       "Whisper", "Organ", "Cellos", "Boing", "Bahh", "Good News", "Junior",
+                       "Kathy", "Ralph", "Fred", "Superstar", "Wobble"]
+            .map { VoiceOption(id: "com.apple.speech.synthesis.voice.\($0.replacingOccurrences(of: " ", with: ""))",
+                               name: $0, language: "en-US", tier: .compact) }
+        let eloquence = ["Eddy", "Flo", "Grandma", "Grandpa", "Reed", "Rocko", "Sandy", "Shelley"]
+            .map { VoiceOption(id: "com.apple.eloquence.en-US.\($0)", name: $0,
+                               language: "en-US", tier: .compact) }
+        let all = novelty + eloquence + [Self.samanthaAsInstalled, Self.avaAsInstalled]
+
+        let best = VoiceRanking.best(all)
+        #expect(best?.id == Self.avaAsInstalled.id, "picked \(best?.name ?? "nil")")
+        #expect(VoiceRanking.needsBetterVoice(all) == false, "the banner must no longer be warranted")
+    }
+
+    @Test("without Ava the banner is warranted again")
+    func withoutAvaBannerReturns() {
+        #expect(VoiceRanking.needsBetterVoice([Self.samanthaAsInstalled]))
+    }
+}

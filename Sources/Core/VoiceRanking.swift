@@ -48,6 +48,12 @@ public struct VoiceOption: Sendable, Equatable, Identifiable {
     /// technically a voice and it is useless as a pronunciation reference. Family rank puts
     /// the real speech voices ahead of the toys.
     public var family: VoiceFamily {
+        // Observed identifiers, not guessed ones. The asset catalog advertises Ava as
+        // `com.apple.ttsbundle.Ava`, but once installed it reports
+        // `com.apple.voice.premium.en-US.Ava` — so both prefixes are real and a rule based
+        // on the catalog alone would have been wrong.
+        if id.hasPrefix("com.apple.voice.premium") { return .downloadable }
+        if id.hasPrefix("com.apple.voice.enhanced") { return .downloadable }
         if id.hasPrefix("com.apple.ttsbundle") { return .downloadable }
         if id.hasPrefix("com.apple.voice") { return .system }
         if id.hasPrefix("com.apple.eloquence") { return .eloquence }

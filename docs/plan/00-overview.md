@@ -15,10 +15,11 @@ were actually recognized. Practice also works at paragraph and whole-passage lev
 data stays on this machine in a browsable folder, and exports are named so they can be
 found by date or subject later.
 
-The reference voice quality is the point of the app, not a detail. Every English voice
-installed on this machine is the lowest quality tier, which is the entire reason speech
-sounds robotic today. Fixing that is work item 07, and validating that the fix is even
-available is a prerequisite listed below.
+The reference voice quality is the point of the app, not a detail. Every English voice that
+ships preinstalled is the lowest quality tier, which was the entire reason speech sounded
+robotic. **Ava (Premium) was installed on 2026-09-14**, so that is now fixed, and the app
+selects it automatically because it defaults to the best installed voice rather than the
+system default.
 
 ## Decisions
 
@@ -59,7 +60,7 @@ All tested on this machine. Do not re-litigate, but re-check if the toolchain ch
 | The delegate-shim shape | Compiles under strict concurrency: one warning, zero errors |
 | `NLTokenizer` | Keeps "This is Dr. Smith's test, e.g. one sentence!" as one sentence. Measured 6 ms for 50,000 words |
 | On-device recognition | `supportsOnDeviceRecognition` true **for en-US only**. `en-GB` and `zh-CN` report available but not on-device |
-| Installed English voices | 41, every one of them the lowest quality tier |
+| Installed English voices | 42. **Ava (Premium) installed 2026-09-14**, identifier `com.apple.voice.premium.en-US.Ava`, en-US, tier premium. The other 41 are all lowest tier |
 | Synthesis word callbacks | Fire correctly, 9 for a 9-word sentence. Need a live run loop |
 | Audio formats | Synthesis to buffer gives **22050 Hz mono non-interleaved**; recording is specified at **44100 Hz mono**. They differ, which matters for item 10 |
 | `AVAudioSession` | **Unavailable on macOS.** There is nothing to configure — but that also means route-change and interruption events must come from Core Audio or `AVCaptureDevice` instead, not that routes never change |
@@ -279,10 +280,11 @@ imagined transcript shapes.
 Two claims are load-bearing and unproven. Both are cheap to check and both change a plan
 if they fail.
 
-1. **Install a Premium voice and confirm it appears as Premium.** Ava and Tom are believed
-   to be Premium American English at roughly 479 MB and 411 MB, but neither is installed
-   and the figures are unverified. Item 07's acceptance test is that the reference does not
-   sound robotic. If no Premium voice materializes, item 07 needs rethinking before code.
+1. ~~**Install a Premium voice and confirm it appears as Premium.**~~ **Done 2026-09-14.**
+   Ava installed at 479 MB and reports as premium, en-US, identifier
+   `com.apple.voice.premium.en-US.Ava`. Voice ranking selects it automatically, since the
+   app defaults to the best installed voice rather than the system default. The blind
+   listening comparison is on the Desktop awaiting a verdict.
 2. **Prove that a privacy grant survives a rebuild.** There are currently zero code-signing
    identities on this machine. The entire development workflow assumes a stable certificate
    keeps the microphone grant. Complete the loop — build, launch, grant, rebuild, press
