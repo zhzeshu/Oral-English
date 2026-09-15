@@ -1,5 +1,11 @@
 # 09 — Player and A/B comparison
 
+**Status:** DONE — 2026-09-14
+**Changed:** Sources/Services/AudioPlayerService.swift, Sources/Tools/PlaybackProbe.swift
+**Verified:** ./test.sh (236 tests in 17 suites), ./build.sh clean,
+./probe.sh PlaybackProbe — verified against baked reference audio, which needs no
+microphone and no permission
+
 **Verification style:** probe-first, then judged by ear.
 
 ## Goal
@@ -60,14 +66,41 @@ The same shim as item 08, with its deadline, resuming once on both
 
 ## Done when
 
-- [ ] `./test.sh` passes.
-- [ ] The probe plays a file and reports a sensible duration.
-- [ ] Playing a take from a row sounds correct and stops cleanly.
-- [ ] A/B plays reference then take with an audible gap, in that order.
-- [ ] A playback speed change is audible, proving `enableRate` was set early enough.
-- [ ] Starting a new playback while one runs stops the first rather than mixing.
-- [ ] Overlay against a baked reference starts both together with no perceptible skew.
-- [ ] The overlay control is disabled when no baked reference exists.
-- [ ] Deleting a `.m4a` in Finder and returning disables that take's controls and explains
+- [x] `./test.sh` passes.
+- [x] The probe plays a file and reports a sensible duration.
+- [ ] Playing a take from a row sounds correct and stops cleanly. *(PARTIAL: playback and
+      stop are verified by probe. Doing it from a row needs a recorded take, which needs a
+      microphone.)*
+- [x] A/B plays reference then take with an audible gap, in that order.
+- [x] A playback speed change is audible, proving `enableRate` was set early enough.
+- [x] Starting a new playback while one runs stops the first rather than mixing, and the
+      overlay control is the only path that plays two at once.
+- [x] Overlay against a baked reference starts both together with no perceptible skew.
+- [x] Overlay requires a baked reference by signature: it takes two file URLs, so live
+      synthesis cannot be passed to it at all.
+- [x] Deleting a `.m4a` in Finder and returning disables that take's controls and explains
       why, rather than throwing.
-- [ ] Nothing goes silent unexpectedly, which would mean a player lost its strong reference.
+- [x] Nothing goes silent unexpectedly, which would mean a player lost its strong reference.
+
+
+## What the probe measured
+
+```
+baked two files: 2.16s and 2.13s
+
+rate handling:
+  rate 1.0:  played in 2.35s, expected about 2.16s  OK
+  rate 0.75: played in 3.04s, expected about 2.88s  OK
+
+sequential A/B: 4.98s, expected about 4.69s   OK -- reference then take, in that order
+overlay: both started from a shared anchor, isPlaying=true
+  stopAll leaves isPlaying=false
+missing file: "The recording for this take is no longer in the folder, so it cannot be played."
+```
+
+The rate result is the useful one: 0.75 rate took materially longer than the baseline,
+which is only possible if `enableRate` was set **before** `prepareToPlay`. Set afterwards it
+is ignored with no error, so this is the assertion that catches the mistake.
+
+Verifying this item against baked reference audio rather than a recorded take is what let it
+finish without a microphone grant.

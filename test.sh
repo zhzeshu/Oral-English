@@ -45,15 +45,18 @@ if [ ${#SRC[@]} -eq 0 ]; then
 fi
 
 mkdir -p build
+# AVFoundation is linked for the one test file that pins the recorder's encoder settings.
+# Core itself still imports only Foundation and NaturalLanguage, enforced above.
 swiftc -parse-as-library -Onone \
     -target "$TARGET" -sdk "$SDK" \
     -swift-version 6 \
-    -F "$FRAMEWORKS" -framework Testing \
+    -F "$FRAMEWORKS" -framework Testing -framework AVFoundation \
     -plugin-path "$PLUGINS" \
     -Xlinker -rpath -Xlinker "$FRAMEWORKS" \
     -Xlinker -rpath -Xlinker "$INTEROP" \
     -o "$OUT" \
-    "${SRC[@]}" Sources/Tools/TestMain.swift
+    "${SRC[@]}" Sources/Services/DelegateShim.swift Sources/Services/AudioRecorderService.swift \
+    Sources/Tools/TestMain.swift
 
 # Never pipe the runner: a pipeline's exit status is the last command's, so piping into
 # tee or grep would silently turn a failing suite into a passing build.

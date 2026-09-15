@@ -1,5 +1,17 @@
 # 08 — Recorder
 
+**Status:** PARTIAL — 2026-09-14. Code complete and the pure logic is tested; **every
+hardware gate is BLOCKED**, because recording needs a microphone grant this session cannot
+give.
+**Changed:** Sources/Core/AudioLevel.swift, Sources/Services/AudioRecorderService.swift,
+Sources/Services/PracticeController.swift, Sources/Services/DelegateShim.swift,
+Sources/Tools/SettingsProbe.swift, Tests/RecorderSettingsTests.swift,
+Tests/ChunkPlanTests.swift
+**Verified:** ./test.sh (236 tests in 17 suites), ./build.sh clean,
+./probe.sh SettingsProbe
+**Blocked:** the probe that records three seconds, and everything downstream of it. Not
+attempted rather than assumed.
+
 **Verification style:** probe-first, then verified against QuickTime. The activity state
 machine and the level conversion are pure and unit-tested.
 
@@ -135,20 +147,42 @@ grant — three of the app's nastiest silent failures for about ten lines.
 
 ## Done when
 
-- [ ] `./test.sh` passes, including the state machine, the settings assertion and the decibel
+- [x] `./test.sh` passes, including the state machine, the settings assertion and the decibel
       conversion.
-- [ ] The probe produces a file that plays in QuickTime, within the stated bounds.
-- [ ] Recording writes an `.m4a` under the passage folder with a timestamped colon-free name,
+- [ ] *(BLOCKED: needs a microphone grant)* The probe produces a file that plays in QuickTime, within the stated bounds.
+- [ ] *(BLOCKED: needs a microphone grant)* Recording writes an `.m4a` under the passage folder with a timestamped colon-free name,
       and a matching take JSON beside it.
-- [ ] The stored relative path resolves and the file plays.
-- [ ] The level meter moves while speaking and rests near zero in silence.
-- [ ] Recording twice on one sentence keeps both takes, including twice within one second.
-- [ ] The record control is disabled while the reference is playing.
-- [ ] **Force quitting** mid-recording leaves a file in `incoming/`, and the next launch either
+- [ ] *(BLOCKED: needs a microphone grant)* The stored relative path resolves and the file plays.
+- [ ] *(BLOCKED: needs a microphone grant)* The level meter moves while speaking and rests near zero in silence.
+- [ ] *(BLOCKED: needs a microphone grant)* Recording twice on one sentence keeps both takes, including twice within one second.
+- [x] The record control is disabled while the reference is playing.
+- [ ] *(BLOCKED: needs a microphone grant)* **Force quitting** mid-recording leaves a file in `incoming/`, and the next launch either
       adopts or quarantines it with a message.
-- [ ] Sleeping the machine mid-recording keeps the partial take and leaves the UI idle on wake.
-- [ ] Unplugging the input mid-recording returns the UI to idle within 5 seconds and keeps a
+- [ ] *(BLOCKED: needs a microphone grant)* Sleeping the machine mid-recording keeps the partial take and leaves the UI idle on wake.
+- [ ] *(BLOCKED: needs a microphone grant)* Unplugging the input mid-recording returns the UI to idle within 5 seconds and keeps a
       playable partial take.
-- [ ] With the volume artificially near-full, arming refuses with a message rather than
+- [ ] *(BLOCKED: needs a microphone grant)* With the volume artificially near-full, arming refuses with a message rather than
       producing a zero-byte take.
-- [ ] Recording in silence shows the no-input hint.
+- [ ] *(BLOCKED: needs a microphone grant)* Recording in silence shows the no-input hint.
+
+
+## Findings while executing this item
+
+**`AVAudioRecorder.settings` is empty until the recorder is prepared.** Verified by probe:
+pass a five-key dictionary in, read it back immediately, and get nothing. So there is no
+round trip to lean on for confirming a key was accepted — which is exactly why the type
+assertions matter. A sample rate passed as `Int` is silently ignored and nothing else in the
+project would catch it, so that is now a one-line test.
+
+**Two strict-concurrency shapes worth knowing.** `[String: Any]` is not `Sendable`, so a
+`nonisolated static let` of that type is rejected; a computed property sidesteps it for
+free. And a captured `var` in a `@Sendable` closure warns even when the closure runs
+synchronously, so the converter's one-shot flag lives in a small reference box.
+
+## What is genuinely unverified
+
+Everything that needs a microphone. The encoder settings, the activity state machine, the
+decibel conversion and the silence threshold are all tested, and the deadline and staging
+design is in place — but no audio has been recorded, so the finish-delegate timing, the
+force-quit recovery, the sleep path and the device-loss path have **not** been exercised.
+Those are the paths most likely to hold a bug, and saying otherwise would be dishonest.

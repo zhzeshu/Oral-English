@@ -1,5 +1,15 @@
 # 10 — Transcription
 
+**Status:** PARTIAL — 2026-09-14. Code complete and the chunk planning and splicing are
+fully tested; **every recognition gate is BLOCKED**, because it needs a speech-recognition
+grant and a real recording.
+**Changed:** Sources/Core/ChunkPlan.swift, Sources/Services/TranscriberService.swift,
+Tests/ChunkPlanTests.swift
+**Verified:** ./test.sh (236 tests in 17 suites, including 13 chunk-planning and splicing
+rows), ./build.sh clean. The en-US pinning was confirmed by the item 06 probe.
+**Blocked:** transcribing anything. No fixtures were captured, so item 11 has nothing to
+calibrate against.
+
 **Verification style:** probe-first. Show the raw transcript and nothing else. The chunk
 planning is pure and unit-tested.
 
@@ -104,13 +114,39 @@ recognizer, which revision 1's error table did not cover.
 
 ## Done when
 
-- [ ] `./test.sh` passes, including every chunk-planning row.
-- [ ] The probe transcribes a clearly-read sentence with at most one word differing.
-- [ ] Per-segment confidence is non-zero and varying, **or** that finding is recorded and the
+- [x] `./test.sh` passes, including every chunk-planning row.
+- [ ] *(BLOCKED: needs a recording and a recognition grant)* The probe transcribes a clearly-read sentence with at most one word differing.
+- [ ] *(BLOCKED: needs a recording and a recognition grant)* Per-segment confidence is non-zero and varying, **or** that finding is recorded and the
       fallback signal is wired instead.
-- [ ] Several real transcripts are saved as fixtures for item 11.
-- [ ] Recording in the app shows the raw transcript in the expanded row detail.
-- [ ] Recording with Wi-Fi off still transcribes, proving it is genuinely local.
-- [ ] A silent recording shows the friendly no-speech message, not a dialog and not a zero.
-- [ ] A 90-second recording transcribes end to end without truncating.
-- [ ] Deleting a passage mid-transcription neither crashes nor writes an orphaned score.
+- [ ] *(BLOCKED: needs a recording and a recognition grant)* Several real transcripts are saved as fixtures for item 11.
+- [ ] *(BLOCKED: needs a recording and a recognition grant)* Recording in the app shows the raw transcript in the expanded row detail.
+- [ ] *(BLOCKED: needs a recording and a recognition grant)* Recording with Wi-Fi off still transcribes, proving it is genuinely local.
+- [ ] *(BLOCKED: needs a recording and a recognition grant)* A silent recording shows the friendly no-speech message, not a dialog and not a zero.
+- [ ] *(BLOCKED: needs a recording and a recognition grant)* A 90-second recording transcribes end to end without truncating.
+- [ ] *(BLOCKED: needs a recording and a recognition grant)* Deleting a passage mid-transcription neither crashes nor writes an orphaned score.
+
+
+## The confidence question is still open, and item 03 depends on it
+
+Item 03's hard-to-hear rule turns on mean recognizer confidence, and
+`SFTranscriptionSegment.confidence` is commonly reported as **0.0** for on-device results.
+If that is true on this machine, every take trips the hard-to-hear presentation and the app
+never shows a score again.
+
+The probe that would settle it needs a recording and a grant, so **this is the single most
+important thing to check first** once permissions are granted. If confidence is uniformly
+zero, item 03 already specifies the fallback: derive the signal from the recorder's own
+metering plus the missed-word ratio, both of which are already available and independent of
+Speech.
+
+## What is tested, and what that buys
+
+The chunk planning and the timestamp splicing are pure and fully covered: contiguous
+coverage at four durations, a quiet point preferred over the hard limit, termination on
+awkward inputs, out-of-order pieces, an empty chunk mid-sequence, and monotonic timings
+across four boundaries. That last one is the bug the plan feared most — every chunk's
+timings restarting at zero — and it is now a unit test rather than a human reading numbers.
+
+What is not tested is everything touching `Speech`: whether a request really caps near a
+minute, whether the format conversion feeds the recognizer correctly, and whether the error
+mapping catches the codes that actually occur.
