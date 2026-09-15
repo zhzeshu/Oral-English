@@ -19,7 +19,7 @@ public enum Granularity: String, Codable, Sendable, CaseIterable, Hashable {
 /// The id is minted at split time and stored on `Sentence` or `Paragraph`; whole-passage
 /// targets carry the passage's own id. It is deliberately never an index — an index would
 /// silently re-point every historical take the moment a passage was re-split.
-public struct TargetRef: Codable, Sendable, Hashable {
+public struct TargetRef: Codable, Sendable, Hashable, Identifiable {
     public var kind: Granularity
     public var id: UUID
 

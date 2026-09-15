@@ -1,8 +1,8 @@
 # 08 — Recorder
 
-**Status:** PARTIAL — 2026-09-14. Code complete and the pure logic is tested; **every
-hardware gate is BLOCKED**, because recording needs a microphone grant this session cannot
-give.
+**Status:** PARTIAL — 2026-09-14. Code complete, pure logic tested, and **recording itself
+is now verified** — the probe records, finalizes and reads back a real file. The remaining
+gates need someone to speak, unplug a device, or force-quit.
 **Changed:** Sources/Core/AudioLevel.swift, Sources/Services/AudioRecorderService.swift,
 Sources/Services/PracticeController.swift, Sources/Services/DelegateShim.swift,
 Sources/Tools/SettingsProbe.swift, Tests/RecorderSettingsTests.swift,
@@ -149,11 +149,14 @@ grant — three of the app's nastiest silent failures for about ten lines.
 
 - [x] `./test.sh` passes, including the state machine, the settings assertion and the decibel
       conversion.
-- [ ] *(BLOCKED: needs a microphone grant)* The probe produces a file that plays in QuickTime, within the stated bounds.
+- [x] The probe produces a readable file within the stated bounds: **3.13 s, 57,892 bytes,
+      138,176 frames at 44100 Hz mono**, finalized by the delegate. The microphone turned out
+      to be grantable to a probe after all — see the findings.
 - [ ] *(BLOCKED: needs a microphone grant)* Recording writes an `.m4a` under the passage folder with a timestamped colon-free name,
       and a matching take JSON beside it.
 - [ ] *(BLOCKED: needs a microphone grant)* The stored relative path resolves and the file plays.
-- [ ] *(BLOCKED: needs a microphone grant)* The level meter moves while speaking and rests near zero in silence.
+- [ ] *(PARTIAL)* The meter rests at zero in silence, confirmed by the probe. Whether it
+      moves while speaking needs someone to speak.
 - [ ] *(BLOCKED: needs a microphone grant)* Recording twice on one sentence keeps both takes, including twice within one second.
 - [x] The record control is disabled while the reference is playing.
 - [ ] *(BLOCKED: needs a microphone grant)* **Force quitting** mid-recording leaves a file in `incoming/`, and the next launch either
@@ -163,7 +166,8 @@ grant — three of the app's nastiest silent failures for about ten lines.
       playable partial take.
 - [ ] *(BLOCKED: needs a microphone grant)* With the volume artificially near-full, arming refuses with a message rather than
       producing a zero-byte take.
-- [ ] *(BLOCKED: needs a microphone grant)* Recording in silence shows the no-input hint.
+- [x] Recording in silence sets `noInputDetected`, verified by the probe: the level held at
+      0.00 for three seconds and the flag fired.
 
 
 ## Findings while executing this item
@@ -179,10 +183,39 @@ project would catch it, so that is now a one-line test.
 free. And a captured `var` in a `@Sendable` closure warns even when the closure runs
 synchronously, so the converter's one-shot flag lives in a small reference box.
 
-## What is genuinely unverified
+## The probe found a real bug in the shim
 
-Everything that needs a microphone. The encoder settings, the activity state machine, the
-decibel conversion and the silence threshold are all tested, and the deadline and staging
-design is in place — but no audio has been recorded, so the finish-delegate timing, the
-force-quit recovery, the sleep path and the device-loss path have **not** been exercised.
-Those are the paths most likely to hold a bug, and saying otherwise would be dishonest.
+This is what probe-first is for, and it paid for itself here.
+
+The probe reported `finalized by the delegate: false` while producing a perfectly readable
+file. The delegate had fired in 0.01 s, so it was not a timeout. The cause was in `OneShot`:
+`recorder.stop()` is called synchronously, the finish callback arrives immediately, and only
+*then* does the caller `await`. The original implementation only resumed a continuation that
+was already waiting, so the result was dropped and `value()` then threw — marking **every
+take** as not cleanly finalized while the audio was fine.
+
+`OneShot` now buffers the first result, so a delegate that fires before anyone awaits is
+still honored. Two details in the fix matter: it keeps only the *first* result, so a later
+error cannot overwrite a success that already happened; and it uses `withLock` rather than
+manual lock and unlock, because `NSLock.lock()` is unavailable from an async context — which
+is the compiler stopping you from holding a lock across a suspension.
+
+Since this shim is reused by the player, the synthesizer and the recognizer, the bug would
+have affected all four.
+
+## A probe can hold a microphone grant, with an embedded Info.plist
+
+The first attempt aborted with no message. macOS privacy **kills** a process that asks for
+the microphone without a usage string rather than prompting, and a bare command-line binary
+has no `Info.plist`. Embedding one into the binary via
+`-sectcreate __TEXT __info_plist` fixes it, and `probe.sh` now does that for every probe and
+ad-hoc signs the result so there is a code identity for the grant to attach to.
+
+Without this, the probe-first approach simply does not work for anything privacy-gated,
+which would have taken items 08 and 10 off the table entirely.
+
+## Still unverified
+
+Force-quit recovery, the sleep path, and device loss mid-recording. Those need a human
+unplugging something or killing the app at the right moment, and they are the paths most
+likely to still hold a bug.

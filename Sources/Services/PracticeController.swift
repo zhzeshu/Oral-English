@@ -16,33 +16,7 @@ import Observation
 @MainActor
 public final class PracticeController {
 
-    public enum AudioActivity: Equatable, Sendable {
-        case idle
-        case speaking(TargetRef)
-        case recording(TargetRef)
-        case playingTake(UUID)
-        case playingAB(TargetRef)
-
-        public var isIdle: Bool { self == .idle }
-
-        public var target: TargetRef? {
-            switch self {
-            case .speaking(let r), .recording(let r), .playingAB(let r): return r
-            case .idle, .playingTake: return nil
-            }
-        }
-
-        /// Human-readable, for the transient status line.
-        public var label: String? {
-            switch self {
-            case .idle: return nil
-            case .speaking: return "Playing reference"
-            case .recording: return "Recording"
-            case .playingTake: return "Playing your take"
-            case .playingAB: return "Comparing"
-            }
-        }
-    }
+    // (AudioActivity is a top-level Core type; no alias needed.)
 
     public private(set) var audio: AudioActivity = .idle
     public private(set) var inFlight: Set<TargetRef> = []

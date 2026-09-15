@@ -1,7 +1,8 @@
 # 05 — Export
 
 **Status:** DONE — 2026-09-14
-**Changed:** Sources/Core/ScoreCSV.swift, Sources/Services/ExportService.swift,
+**Changed:** Sources/Core/ScoreCSV.swift, Sources/Core/Paths.swift (export naming),
+Sources/Services/ExportService.swift,
 Sources/Core/PassageStore.swift (atomic scores.csv write), Sources/Tools/ExportProbe.swift,
 probe.sh, Tests/ScoreCSVTests.swift
 **Verified:** ./test.sh (174 tests in 10 suites passed), ./build.sh clean,
@@ -21,7 +22,9 @@ Get practice data out easily, in files named so they can be found later by date 
 ## Files
 
 - `Sources/Core/ScoreCSV.swift` — pure, passage to string
-- `Sources/Core/ExportNaming.swift` — reuses the item 02 slug
+- Export naming lives in `Sources/Core/Paths.swift` alongside the folder naming, so the
+  slug has exactly one implementation. The plan allowed either; one file is better, because
+  two slug implementations that drift apart is the bug it warned about.
 - `Sources/Services/ExportService.swift` — a thin shell owning only the save dialog and the
   subprocess
 - `Tests/ExportNamingTests.swift`, `Tests/ScoreCSVTests.swift`

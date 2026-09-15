@@ -7,6 +7,7 @@ struct PassageDetailView: View {
     @Binding var showingNewPassage: Bool
     @State private var renaming = false
     @State private var newTitle = ""
+    @State private var historyTarget: TargetRef?
 
     var body: some View {
         if let loaded = model.loaded {
@@ -50,7 +51,8 @@ struct PassageDetailView: View {
                                 onPlay: { Task { await model.playReference(ref) } },
                                 onToggleExpand: {
                                     model.expandedTarget = model.expandedTarget == ref ? nil : ref
-                                }
+                                },
+                                onShowHistory: { historyTarget = ref }
                             )
                         }
                     }
@@ -65,6 +67,9 @@ struct PassageDetailView: View {
                 noInputDetected: model.recorderNoInput,
                 onStop: { model.practice.stopAll() }
             )
+        }
+        .popover(item: $historyTarget) { ref in
+            TakeDetailView(target: ref)
         }
         .alert("Rename passage", isPresented: $renaming) {
             TextField("Title", text: $newTitle)

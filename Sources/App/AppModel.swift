@@ -137,6 +137,65 @@ public final class AppModel {
     public var recorderElapsed: TimeInterval { recorder.elapsed }
     public var recorderNoInput: Bool { recorder.noInputDetected }
 
+    // MARK: - Take actions
+
+    public func playTake(_ take: Take) async {
+        guard let loaded, let folder = selectedFolder else { return }
+        guard loaded.hasAudio(take) else {
+            errorMessage = AppFailure.audioMissing(path: take.audioPath).userMessage
+            return
+        }
+        let url = await store.resolve(relativePath: take.audioPath, in: folder)
+        do {
+            try await player.play(url, slot: .take, rate: settings.playbackRate)
+        } catch let f as AppFailure {
+            Log.failure(Log.audio, f, context: "play take")
+            errorMessage = f.userMessage
+        } catch {
+            Log.unexpected(Log.audio, error, context: "play take")
+        }
+    }
+
+    public func deleteTake(_ take: Take) async {
+        guard let folder = selectedFolder else { return }
+        do {
+            loaded = try await store.deleteTake(take, in: folder)
+            rebuildRowSummaries()
+            await reloadSummaries()
+        } catch let f as AppFailure {
+            errorMessage = f.userMessage
+        } catch {
+            Log.unexpected(Log.store, error, context: "delete take")
+        }
+    }
+
+    /// Re-runs the tuned scorer over stored audio.
+    ///
+    /// This is why keeping every take pays off: tuning improves old results rather than
+    /// invalidating them. Reports partial success honestly rather than failing the batch.
+    public func rescore(_ take: Take) async {
+        guard let folder = selectedFolder, let loaded else { return }
+        guard loaded.hasAudio(take) else {
+            errorMessage = AppFailure.audioMissing(path: take.audioPath).userMessage
+            return
+        }
+        practice.beginBackgroundWork(take.target)
+        defer { practice.endBackgroundWork(take.target) }
+
+        let url = await store.resolve(relativePath: take.audioPath, in: folder)
+        do {
+            let transcript = try await transcriber.transcribe(fileURL: url)
+            let report = Scorer.score(reference: take.referenceText, transcript: transcript)
+            self.loaded = try await store.updateScore(report, takeID: take.id, in: folder)
+            rebuildRowSummaries()
+        } catch let f as AppFailure {
+            Log.failure(Log.speech, f, context: "rescore")
+            errorMessage = f.userMessage
+        } catch {
+            Log.unexpected(Log.speech, error, context: "rescore")
+        }
+    }
+
     public var activeVoiceName: String? {
         voiceCatalog.resolved(preferred: settings.voiceIdentifier)?.name
     }

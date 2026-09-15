@@ -7,8 +7,13 @@ grant and a real recording.
 Tests/ChunkPlanTests.swift
 **Verified:** ./test.sh (236 tests in 17 suites, including 13 chunk-planning and splicing
 rows), ./build.sh clean. The en-US pinning was confirmed by the item 06 probe.
-**Blocked:** transcribing anything. No fixtures were captured, so item 11 has nothing to
-calibrate against.
+**Blocked:** transcribing anything. The probe is written and now *runnable* — `probe.sh`
+embeds an Info.plist with the usage strings, so a probe can hold a recognition grant — but it
+needs a recorded take and someone to accept the prompt. No fixtures were captured, so item 11
+has nothing to calibrate against.
+
+To run it: `./probe.sh RecordProbe` to capture audio, then
+`./probe.sh TranscribeProbe <file> "the reference text"`.
 
 **Verification style:** probe-first. Show the raw transcript and nothing else. The chunk
 planning is pure and unit-tested.

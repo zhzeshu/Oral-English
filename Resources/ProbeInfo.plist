@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.zackzhang.oralenglish.probe</string>
+	<key>CFBundleName</key>
+	<string>Oral English Probe</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>A development probe for Oral English records a few seconds to verify the microphone works.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>A development probe for Oral English transcribes a recording on this Mac to verify recognition works.</string>
+</dict>
+</plist>

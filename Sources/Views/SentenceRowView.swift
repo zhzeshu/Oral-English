@@ -21,6 +21,7 @@ struct SentenceRowView: View {
     var onSelect: () -> Void
     var onPlay: () -> Void
     var onToggleExpand: () -> Void
+    var onShowHistory: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -140,7 +141,13 @@ struct SentenceRowView: View {
                 }
                 if summary.takeCount > 0 {
                     Text("·")
-                    Text("\(summary.takeCount) take\(summary.takeCount == 1 ? "" : "s")")
+                    // The history opens from the take count, which is the only affordance
+                    // for it. An always-visible table was explicitly rejected.
+                    Button("\(summary.takeCount) take\(summary.takeCount == 1 ? "" : "s")") {
+                        onShowHistory()
+                    }
+                    .buttonStyle(.plain)
+                    .underline()
                 }
                 if summary.hasMissingAudio {
                     Text("·")

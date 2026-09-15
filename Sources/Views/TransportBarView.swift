@@ -6,7 +6,7 @@ import SwiftUI
 /// which is the whole point of the subtractive rule for this item. The keyboard shortcuts
 /// are deliberately not printed here; they live in the menu.
 struct TransportBarView: View {
-    let activity: PracticeController.AudioActivity
+    let activity: AudioActivity
     let level: Double
     let elapsed: TimeInterval
     let noInputDetected: Bool

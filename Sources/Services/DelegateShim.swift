@@ -23,7 +23,7 @@ import Foundation
 public final class OneShot<Value: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Value, Error>?
-    private var finished = false
+    private var settled: Result<Value, Error>?
     private var deadlineTask: Task<Void, Never>?
 
     private let operation: String
@@ -35,16 +35,35 @@ public final class OneShot<Value: Sendable>: @unchecked Sendable {
     }
 
     /// Waits for `complete` or `fail`, whichever comes first, or throws on the deadline.
+    ///
+    /// **The result is buffered.** A delegate can fire before this is ever awaited — and in
+    /// practice it does: `recorder.stop()` is called synchronously, the finish callback
+    /// arrives immediately, and only then does the caller `await`. An implementation that
+    /// only resumes a waiting continuation drops that result on the floor. The symptom was
+    /// every take being reported as not cleanly finalized while the audio was in fact
+    /// perfect, which the record probe caught.
     public func value() async throws -> Value {
-        try await withCheckedThrowingContinuation { c in
-            lock.lock()
-            if finished {
-                lock.unlock()
-                c.resume(throwing: CancellationError())
+        // Already settled before anyone waited. `withLock` rather than manual
+        // lock/unlock, because `NSLock.lock()` is unavailable from an async context — and
+        // rightly so: holding a lock across a suspension is how you deadlock.
+        if let early = takeSettled() {
+            return try early.get()
+        }
+
+        return try await withCheckedThrowingContinuation { c in
+            // Settled between the check above and here.
+            let outcome: Result<Value, Error>? = lock.withLock {
+                if let s = settled {
+                    settled = nil
+                    return s
+                }
+                continuation = c
+                return nil
+            }
+            if let outcome {
+                c.resume(with: outcome)
                 return
             }
-            continuation = c
-            lock.unlock()
 
             let seconds = Double(timeout.components.seconds)
                 + Double(timeout.components.attoseconds) / 1e18
@@ -58,29 +77,38 @@ public final class OneShot<Value: Sendable>: @unchecked Sendable {
     }
 
     public func complete(_ value: Value) {
-        resume { $0.resume(returning: value) }
+        deliver(.success(value))
     }
 
     public func fail(_ error: Error) {
-        resume { $0.resume(throwing: error) }
+        deliver(.failure(error))
     }
 
-    private func resume(_ body: (CheckedContinuation<Value, Error>) -> Void) {
-        lock.lock()
-        guard !finished, let c = continuation else {
-            finished = true
-            continuation = nil
-            lock.unlock()
-            return
+    private func takeSettled() -> Result<Value, Error>? {
+        lock.withLock {
+            let s = settled
+            settled = nil
+            return s
         }
-        finished = true
-        continuation = nil
-        let task = deadlineTask
-        deadlineTask = nil
-        lock.unlock()
+    }
 
+    /// Resumes exactly once, or buffers for a caller that has not awaited yet.
+    private func deliver(_ result: Result<Value, Error>) {
+        let waiting: (CheckedContinuation<Value, Error>, Task<Void, Never>?)? = lock.withLock {
+            if let c = continuation {
+                continuation = nil
+                let task = deadlineTask
+                deadlineTask = nil
+                return (c, task)
+            }
+            // Nobody is waiting. Keep the first result only, so a later error cannot
+            // overwrite a success that already happened.
+            if settled == nil { settled = result }
+            return nil
+        }
+        guard let (c, task) = waiting else { return }
         task?.cancel()
-        body(c)
+        c.resume(with: result)
     }
 }
 
