@@ -14,8 +14,12 @@ struct SentenceRowView: View {
     let isActive: Bool
     let isExpanded: Bool
     let nestedSentences: [String]
+    let isSpeaking: Bool
+    let spokenRange: (location: Int, length: Int)?
+    let canPlay: Bool
 
     var onSelect: () -> Void
+    var onPlay: () -> Void
     var onToggleExpand: () -> Void
 
     var body: some View {
@@ -41,10 +45,9 @@ struct SentenceRowView: View {
 
     private var text: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(summary.text)
+            Text(highlighted)
                 .font(.system(size: 15))
                 .lineSpacing(4)
-                .foregroundStyle(summary.takeCount > 0 || isActive ? .primary : .secondary)
             // Paragraph and whole rows show their sentences dimmed inside, which is the
             // only difference between the three granularities.
             if !nestedSentences.isEmpty {
@@ -76,11 +79,34 @@ struct SentenceRowView: View {
         }
     }
 
-    /// Placeholders until items 07 through 09 wire the audio. Disabled rather than absent,
-    /// so the layout does not shift when they start working.
+    /// The spoken word highlighted in place.
+    ///
+    /// Built from UTF-16 offsets through the pure converter, never by slicing a Character
+    /// array — that drifts on any accented character or emoji. A voice that emits no ranges
+    /// is a supported case: the whole sentence highlights instead of nothing.
+    private var highlighted: AttributedString {
+        var out = AttributedString(summary.text)
+        out.foregroundColor = summary.takeCount > 0 || isActive ? .primary : .secondary
+        guard isSpeaking else { return out }
+        guard let r = spokenRange,
+              let swiftRange = SpokenRange.range(
+                in: summary.text, utf16Location: r.location, utf16Length: r.length),
+              let attributedRange = Range(swiftRange, in: out)
+        else {
+            out.backgroundColor = Color.accentColor.opacity(0.12)
+            return out
+        }
+        out[attributedRange].backgroundColor = Color.accentColor.opacity(0.22)
+        return out
+    }
+
     private var transport: some View {
         HStack(spacing: 3) {
-            Image(systemName: "play.fill")
+            Button(action: onPlay) {
+                Image(systemName: isSpeaking ? "speaker.wave.2.fill" : "play.fill")
+            }
+            .buttonStyle(.plain)
+            .disabled(!canPlay && !isSpeaking)
             Image(systemName: "mic")
             Image(systemName: "arrow.left.arrow.right")
             if summary.takeCount > 0 {

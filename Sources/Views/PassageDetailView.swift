@@ -43,7 +43,11 @@ struct PassageDetailView: View {
                                 isActive: model.selectedTarget == ref,
                                 isExpanded: model.expandedTarget == ref,
                                 nestedSentences: nested(for: ref, in: loaded),
+                                isSpeaking: model.practice.speakingTarget == ref,
+                                spokenRange: model.practice.spokenRange,
+                                canPlay: model.practice.canPlayReference(),
                                 onSelect: { model.selectedTarget = ref },
+                                onPlay: { Task { await model.playReference(ref) } },
                                 onToggleExpand: {
                                     model.expandedTarget = model.expandedTarget == ref ? nil : ref
                                 }
@@ -111,9 +115,7 @@ struct PassageDetailView: View {
         var parts: [String] = []
         if let theme = loaded.passage.theme { parts.append(theme) }
         parts.append(Styling.longDateFormatter.string(from: loaded.passage.createdAt))
-        if let voice = model.settings.voiceIdentifier {
-            parts.append(voice.components(separatedBy: ".").last ?? voice)
-        }
+        if let voice = model.activeVoiceName { parts.append(voice) }
         return parts.joined(separator: " · ")
     }
 
@@ -122,6 +124,15 @@ struct PassageDetailView: View {
             Button("Rename…") {
                 newTitle = loaded.passage.title
                 renaming = true
+            }
+            Menu("Voice") {
+                ForEach(model.voiceCatalog.grouped, id: \.tier) { group in
+                    Section(group.tier.label) {
+                        ForEach(group.voices) { v in
+                            Button(v.name) { model.selectVoice(v) }
+                        }
+                    }
+                }
             }
             Button("Reveal in Finder") { model.revealInFinder() }
             Divider()

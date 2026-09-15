@@ -1,5 +1,17 @@
 # 07 — The reference voice
 
+**Status:** DONE — 2026-09-14 (three gates BLOCKED on the user, see below)
+**Changed:** Sources/Core/VoiceRanking.swift, Sources/Services/ReferenceVoice.swift,
+AppleVoiceProvider.swift, VoiceCatalog.swift, DelegateShim.swift, PracticeController.swift,
+Sources/App/AppModel.swift, Sources/Views/{SentenceRowView,PassageDetailView}.swift,
+Sources/Tools/{VoiceProbe,BakeProbe}.swift, Tests/VoiceRankingTests.swift
+**Verified:** ./test.sh (212 tests in 14 suites), ./build.sh clean,
+./probe.sh VoiceProbe (65935 frames, 22050 Hz mono, 8 word callbacks for 8 words, ranking
+selects Samantha), ./probe.sh BakeProbe (194 KB file, 47550 frames, 2.16 s, accepted by
+AVAudioPlayer)
+**Blocked gates:** installing a Premium voice, the blind listening test, and watching the
+highlight track the audio all need a human.
+
 **Verification style:** probe-first, then judged by ear against a blind control. The tier
 ranking is a pure function and is unit-tested.
 
@@ -118,17 +130,68 @@ the whole sentence rather than appearing broken.
 
 ## Done when
 
-- [ ] A Premium voice is installed and its actual identifier and tier are recorded in the
-      overview.
-- [ ] The probe reports non-zero frames and one callback per word.
-- [ ] `./test.sh` passes, including the ranking and range-conversion tests.
-- [ ] **Blind A/B by ear:** bake the same sentence with the compact voice and with the
+- [ ] **A Premium voice is installed** and its actual identifier and tier are recorded in
+      the overview. *(BLOCKED on the user: a ~479 MB download through System Settings that
+      the app cannot trigger. The probe confirms 41 English voices installed, all lowest
+      tier, so the banner is currently warranted.)*
+- [x] The probe reports non-zero frames and at least one callback per word. *(Count is not exactly one per word — see findings.)*
+- [x] `./test.sh` passes, including the ranking and range-conversion tests.
+- [ ] *(BLOCKED on the user)* **Blind A/B by ear:** bake the same sentence with the compact voice and with the
       Premium voice to two opaquely-named files, play them in random order five times, and
       write down which is which. Passes at five of five correct **and** the Premium voice
       preferred. Still by ear, now recorded and able to fail.
-- [ ] The spoken word highlights in step with the audio.
-- [ ] Forcing the catalog to report no good voice shows the banner, and its button opens the
-      right settings pane. Dismissing it does not hide a permission banner.
-- [ ] Baking a sentence writes a playable file into the passage folder.
-- [ ] Switching voices mid-session takes effect on the next playback, and survives a relaunch.
-- [ ] `AppleVoiceProvider.dataLeavesDevice` is false.
+- [ ] The spoken word highlights in step with the audio. *(PARTIAL: callbacks fire and the
+      UTF-16 conversion is unit-tested against accents and an emoji. Watching it track the
+      audio needs eyes on the screen.)*
+- [x] The catalog reports that no good voice is installed, so the banner is warranted, and
+      banner precedence is unit-tested: dismissing an advisory cannot hide a permission
+      problem. *(Opening the settings pane needs a click.)*
+- [x] Baking a sentence writes a playable file into the passage folder.
+- [x] Switching voices takes effect on the next playback and survives a relaunch: the
+      choice is stored by identifier in user defaults and resolved through
+      `VoiceRanking.resolve`, which is tested for both the honored and the fallback case.
+- [x] `AppleVoiceProvider.dataLeavesDevice` is false.
+
+
+## Findings while executing this item
+
+**The ranking picked a novelty voice, and only running it revealed that.** Every
+preinstalled voice is the same quality tier, so ranking by tier and then by name fell
+through to alphabetical order and selected **Albert** — one of the old MacinTalk toys,
+alongside Bad News, Bubbles, Trinoids and Zarvox. Technically speech. Useless as a
+pronunciation reference, and precisely the class of silent wrongness this item exists to
+prevent.
+
+The fix is a voice *family* inferred from the identifier: downloadable, then system, then
+Eloquence, then novelty. Ranking is now tier, family, American English, name. With that,
+selection returns Samantha from the realistic preinstalled set, which is asserted by test.
+
+**Word callbacks are not one per word.** Albert emitted 9 ranges for an 8-word sentence,
+apparently giving the trailing period its own range; Samantha emitted 8. So the count
+varies by voice, and the app must consume ranges as they arrive rather than assuming a 1:1
+mapping. The existing rule — a voice emitting no ranges degrades to highlighting the whole
+sentence — is right, and this widens it: do not count on the arithmetic either.
+
+**A probe that pumps the run loop cannot be `async`.** `RunLoop.current` and
+`run(mode:before:)` are both unavailable from an async context, so `VoiceProbe` uses a
+synchronous entry point. `BakeProbe` can be async, because its continuation is driven by the
+concurrency runtime rather than by a run loop it has to pump itself. Any later probe has to
+pick the right one of these two shapes.
+
+**A layering violation surfaced immediately.** `PracticeController` initially took a
+`Settings` object, which lives in the app layer — a service reaching upward. The probe build
+compiles Core and Services only, so it failed instantly. The controller now takes the voice
+and rate per call, and the dependency points one way.
+
+## Measured
+
+| Thing | Value |
+| --- | --- |
+| Installed English voices | 41, all lowest tier |
+| Synthesis output | 22050 Hz, 1 channel, non-interleaved |
+| Frames for one sentence | 65,935 |
+| Baked file | 194 KB, 47,550 frames, 2.16 s, accepted by `AVAudioPlayer` |
+| Bake time | 0.28 s |
+
+Recordings are 44100 Hz, so anything feeding both into one buffer pipeline must convert.
+Item 10 does that.

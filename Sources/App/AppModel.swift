@@ -11,6 +11,8 @@ public final class AppModel {
 
     public let settings: Settings
     public let permissions = PermissionService()
+    public let voiceCatalog: VoiceCatalog
+    public let practice: PracticeController
     public private(set) var store: PassageStore
     private let lock: LibraryLock
 
@@ -48,6 +50,10 @@ public final class AppModel {
 
     public init(settings: Settings = Settings()) {
         self.settings = settings
+        let provider = AppleVoiceProvider()
+        let catalog = VoiceCatalog(provider: provider)
+        self.voiceCatalog = catalog
+        self.practice = PracticeController(voice: provider)
         self.store = PassageStore(root: settings.libraryRoot)
         self.lock = LibraryLock(libraryRoot: settings.libraryRoot)
     }
@@ -64,6 +70,8 @@ public final class AppModel {
             try await store.ensureLibrary()
             // Status only, no prompt. Nothing asks for a permission at launch.
             permissions.refresh()
+            await voiceCatalog.refresh()
+            voiceNeedsAttention = voiceCatalog.needsBetterVoice
             libraryIsSynced = await store.isInUbiquitousContainer()
             refreshBanner()
             await reloadSummaries()
@@ -94,8 +102,40 @@ public final class AppModel {
         banner = candidates.min()
     }
 
-    /// Set by the voice catalog in item 07.
     public var voiceNeedsAttention = false
+
+    /// The sentences a target covers, so synthesis can speak one per utterance even at
+    /// paragraph and whole-passage level.
+    public func sentences(for ref: TargetRef) -> [String] {
+        guard let loaded else { return [] }
+        switch ref.kind {
+        case .sentence:
+            return loaded.passage.sentence(id: ref.id).map { [$0.text] } ?? []
+        case .paragraph:
+            guard let p = loaded.passage.paragraph(id: ref.id) else { return [] }
+            return p.sentenceIDs.compactMap { loaded.passage.sentence(id: $0)?.text }
+        case .passage:
+            return loaded.passage.sentences.map(\.text)
+        }
+    }
+
+    public func playReference(_ ref: TargetRef) async {
+        selectedTarget = ref
+        await practice.playReference(
+            ref,
+            sentences: sentences(for: ref),
+            voice: voiceCatalog.resolved(preferred: settings.voiceIdentifier),
+            rate: settings.speakingRate
+        )
+    }
+
+    public var activeVoiceName: String? {
+        voiceCatalog.resolved(preferred: settings.voiceIdentifier)?.name
+    }
+
+    public func selectVoice(_ option: VoiceOption) {
+        settings.voiceIdentifier = option.id
+    }
 
     /// Called on the first record tap, never at launch.
     public func requestRecordingPermissions() async -> PermissionMatrix {
