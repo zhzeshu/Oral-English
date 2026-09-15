@@ -65,7 +65,7 @@ struct SentenceRowView: View {
     /// furniture at all.
     @ViewBuilder
     private var accuracy: some View {
-        if let a = summary.bestAccuracy, summary.verdict != .hardToHear {
+        if let a = summary.bestAccuracy, summary.verdict == .clear || summary.verdict == .someWordsHardToHear {
             Text(Styling.percent(a))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
@@ -74,6 +74,13 @@ struct SentenceRowView: View {
             Image(systemName: "ear.trianglebadge.exclamationmark")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
+                .help("Hard to hear — try recording again")
+                .frame(width: 24, alignment: .trailing)
+        } else if summary.verdict == .unsupportedLength {
+            Image(systemName: "text.badge.xmark")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .help("This passage is too long to score in one piece")
                 .frame(width: 24, alignment: .trailing)
         } else {
             Color.clear.frame(width: 24, height: 1)

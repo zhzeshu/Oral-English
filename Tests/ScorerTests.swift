@@ -178,13 +178,19 @@ struct ScorerTests {
         #expect(elapsed < 3.0, "took \(elapsed)s")
     }
 
-    @Test("a reference beyond the token cap is refused rather than aligned")
+    /// A length problem must not present as an audio problem. Reusing the hard-to-hear
+    /// verdict here would tell the user to move closer to the microphone when the actual
+    /// issue is a five-thousand-word "sentence".
+    @Test("a reference beyond the token cap is refused with a length verdict, not an audio one")
     func tokenCapRefused() {
         let huge = String(repeating: "word ", count: Scorer.maxReferenceTokens + 50)
-        let r = score(huge, "word")
+        let r = score(huge, "word heard here")
         #expect(r.accuracy == 0.0)
         #expect(r.referenceTokenCount > Scorer.maxReferenceTokens)
         #expect(r.accuracy.isFinite)
+        #expect(r.verdict == .unsupportedLength)
+        #expect(r.verdict != .hardToHear, "a long passage is not a microphone problem")
+        #expect(r.extraCount == 3, "the heard words are still reported")
     }
 
     // MARK: - Word error rate

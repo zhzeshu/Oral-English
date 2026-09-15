@@ -94,12 +94,18 @@ struct TakeDetailView: View {
             }
 
             if let score = take.score {
-                if score.verdict == .hardToHear {
+                switch score.verdict {
+                case .hardToHear:
                     Image(systemName: "ear.trianglebadge.exclamationmark")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .help("Hard to hear")
-                } else {
+                case .unsupportedLength:
+                    Image(systemName: "text.badge.xmark")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .help("Too long to score in one piece")
+                case .clear, .someWordsHardToHear:
                     Text(Styling.percent(score.accuracy))
                         .font(.system(size: 12).monospacedDigit())
                         .foregroundStyle(Styling.accuracyColor(score.accuracy))

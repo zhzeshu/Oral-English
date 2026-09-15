@@ -214,6 +214,10 @@ public enum AudioQualityVerdict: String, Codable, Sendable, Hashable {
     case someWordsHardToHear
     /// Show the score, however low.
     case clear
+    /// The target is too long to align. Not an audio problem, so it must not present as
+    /// one — reusing `hardToHear` here told the user to move closer to the microphone when
+    /// the actual issue was a five-thousand-word "sentence".
+    case unsupportedLength
 }
 
 public struct ScoreReport: Codable, Sendable, Hashable {

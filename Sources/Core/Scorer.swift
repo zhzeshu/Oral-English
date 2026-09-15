@@ -63,7 +63,7 @@ public enum Scorer {
         meanConfidence: Double,
         transcriptText: String,
         costs: Costs = defaultCosts,
-        engine: String = "test",
+        engine: String = "SFSpeechRecognizer/onDevice",
         localeIdentifier: String = "en-US",
         scoredAt: Date = Date()
     ) -> ScoreReport {
@@ -87,7 +87,11 @@ public enum Scorer {
                 missedCount: 0, extraCount: m, referenceTokenCount: 0,
                 transcript: transcriptText,
                 meanConfidence: meanConfidence,
-                verdict: verdict(accuracy: accuracy, meanConfidence: meanConfidence),
+                // Pass the real counts. Relying on the defaults here skipped the
+                // runaway-transcript check entirely, so an empty reference with forty heard
+                // words reported a plain zero rather than "hard to hear".
+                verdict: verdict(accuracy: accuracy, meanConfidence: meanConfidence,
+                                 extraCount: m, referenceTokenCount: 0),
                 engine: engine, localeIdentifier: localeIdentifier,
                 scoredAt: scoredAt, words: words
             )
@@ -97,9 +101,9 @@ public enum Scorer {
             return ScoreReport(
                 accuracy: 0, wordErrorRate: 1, rawWeightedError: Double(n),
                 matchCount: 0, partialCount: 0, substitutionCount: 0,
-                missedCount: n, extraCount: 0, referenceTokenCount: n,
+                missedCount: n, extraCount: m, referenceTokenCount: n,
                 transcript: transcriptText, meanConfidence: meanConfidence,
-                verdict: .hardToHear,
+                verdict: .unsupportedLength,
                 engine: engine, localeIdentifier: localeIdentifier,
                 scoredAt: scoredAt, words: []
             )
@@ -111,43 +115,44 @@ public enum Scorer {
         var weighted = 0.0
 
         for op in ops {
+            // One construction site rather than five near-identical ones.
+            let targetIndex: Int?
+            let display: String
+            let normalized: String
+            let heard: String?
+            let status: WordStatus
+
             switch op {
             case .match(let r, let h):
-                matches += 1
-                weighted += costs.match
-                words.append(WordResult(
-                    targetIndex: r, display: referenceTokens[r].display,
-                    normalized: referenceTokens[r].normalized,
-                    heard: hypothesisTokens[h].normalized, status: .match))
+                matches += 1; weighted += costs.match
+                targetIndex = r; display = referenceTokens[r].display
+                normalized = referenceTokens[r].normalized
+                heard = hypothesisTokens[h].normalized; status = .match
             case .partial(let r, let h):
-                partials += 1
-                weighted += costs.partial
-                words.append(WordResult(
-                    targetIndex: r, display: referenceTokens[r].display,
-                    normalized: referenceTokens[r].normalized,
-                    heard: hypothesisTokens[h].normalized, status: .partial))
+                partials += 1; weighted += costs.partial
+                targetIndex = r; display = referenceTokens[r].display
+                normalized = referenceTokens[r].normalized
+                heard = hypothesisTokens[h].normalized; status = .partial
             case .substitute(let r, let h):
-                subs += 1
-                weighted += costs.substitution
-                words.append(WordResult(
-                    targetIndex: r, display: referenceTokens[r].display,
-                    normalized: referenceTokens[r].normalized,
-                    heard: hypothesisTokens[h].normalized, status: .substituted))
+                subs += 1; weighted += costs.substitution
+                targetIndex = r; display = referenceTokens[r].display
+                normalized = referenceTokens[r].normalized
+                heard = hypothesisTokens[h].normalized; status = .substituted
             case .delete(let r):
-                missed += 1
-                weighted += costs.deletion
-                words.append(WordResult(
-                    targetIndex: r, display: referenceTokens[r].display,
-                    normalized: referenceTokens[r].normalized,
-                    heard: nil, status: .missed))
+                missed += 1; weighted += costs.deletion
+                targetIndex = r; display = referenceTokens[r].display
+                normalized = referenceTokens[r].normalized
+                heard = nil; status = .missed
             case .insert(let h):
-                extras += 1
-                weighted += costs.insertion
-                words.append(WordResult(
-                    targetIndex: nil, display: hypothesisTokens[h].display,
-                    normalized: hypothesisTokens[h].normalized,
-                    heard: hypothesisTokens[h].normalized, status: .extra))
+                extras += 1; weighted += costs.insertion
+                targetIndex = nil; display = hypothesisTokens[h].display
+                normalized = hypothesisTokens[h].normalized
+                heard = hypothesisTokens[h].normalized; status = .extra
             }
+
+            words.append(WordResult(
+                targetIndex: targetIndex, display: display, normalized: normalized,
+                heard: heard, status: status))
         }
 
         // Clamped to [0, 1]. The raw weighted error is kept so the over-insertion signal is
@@ -221,56 +226,56 @@ public enum Scorer {
         costs: Costs
     ) -> [Op] {
         let n = ref.count, m = hyp.count
-
-        // Which diagonal move applies for each cell, and what it costs.
-        enum Diag { case match, partial, substitute }
-        var cost = [[Double]](repeating: [Double](repeating: 0, count: m + 1), count: n + 1)
-        var back = [[Op?]](repeating: [Op?](repeating: nil, count: m + 1), count: n + 1)
-
-        for i in 1...max(n, 1) where n > 0 {
-            cost[i][0] = cost[i - 1][0] + costs.deletion
-            back[i][0] = .delete(ref: i - 1)
-        }
-        for j in 1...max(m, 1) where m > 0 {
-            cost[0][j] = cost[0][j - 1] + costs.insertion
-            back[0][j] = .insert(hyp: j - 1)
+        guard n > 0, m > 0 else {
+            // One side empty: the whole of the other side is a single run of deletions or
+            // insertions, which needs no table at all.
+            if n > 0 { return (0..<n).map { .delete(ref: $0) } }
+            if m > 0 { return (0..<m).map { .insert(hyp: $0) } }
+            return []
         }
 
-        guard n > 0 && m > 0 else {
-            return traceback(back, n: n, m: m)
+        // Flat storage, indexed i * (m + 1) + j.
+        //
+        // `[[Double]](repeating: [Double](...), count: n + 1)` gives n + 1 references to
+        // one shared inner array, so the first write to each row triggers a copy-on-write
+        // allocation. Same complexity, needless churn. Flat is simpler and allocates twice.
+        let stride = m + 1
+        var cost = [Double](repeating: 0, count: (n + 1) * stride)
+        var back = [Op?](repeating: nil, count: (n + 1) * stride)
+
+        for i in 1...n {
+            cost[i * stride] = cost[(i - 1) * stride] + costs.deletion
+            back[i * stride] = .delete(ref: i - 1)
+        }
+        for j in 1...m {
+            cost[j] = cost[j - 1] + costs.insertion
+            back[j] = .insert(hyp: j - 1)
         }
 
         for i in 1...n {
             for j in 1...m {
                 let sim = Normalizer.similarity(ref[i - 1], hyp[j - 1])
-                let diag: Diag
                 let diagCost: Double
-                if sim >= 1.0 {
-                    diag = .match
-                    diagCost = costs.match
-                } else if sim >= Normalizer.partialMatchThreshold {
-                    diag = .partial
-                    diagCost = costs.partial
-                } else {
-                    diag = .substitute
-                    diagCost = costs.substitution
-                }
-
-                let fromDiag = cost[i - 1][j - 1] + diagCost
-                let fromUp = cost[i - 1][j] + costs.deletion     // reference word not heard
-                let fromLeft = cost[i][j - 1] + costs.insertion  // heard word not in reference
-
-                // Tie-break: diagonal first, then deletion, then insertion. Combined with
-                // the diagonal's own ordering this gives match > partial > substitute >
-                // delete > insert.
-                var best = fromDiag
                 var op: Op
-                switch diag {
-                case .match: op = .match(ref: i - 1, hyp: j - 1)
-                case .partial: op = .partial(ref: i - 1, hyp: j - 1)
-                case .substitute: op = .substitute(ref: i - 1, hyp: j - 1)
+                if sim >= 1.0 {
+                    diagCost = costs.match
+                    op = .match(ref: i - 1, hyp: j - 1)
+                } else if sim >= Normalizer.partialMatchThreshold {
+                    diagCost = costs.partial
+                    op = .partial(ref: i - 1, hyp: j - 1)
+                } else {
+                    diagCost = costs.substitution
+                    op = .substitute(ref: i - 1, hyp: j - 1)
                 }
 
+                var best = cost[(i - 1) * stride + (j - 1)] + diagCost
+                let fromUp = cost[(i - 1) * stride + j] + costs.deletion
+                let fromLeft = cost[i * stride + (j - 1)] + costs.insertion
+
+                // Tie-break: diagonal, then deletion, then insertion. Combined with the
+                // diagonal's own ordering this gives match > partial > substitute > delete
+                // > insert, which is what keeps a misread word attributed to the word the
+                // user actually misread.
                 if fromUp < best {
                     best = fromUp
                     op = .delete(ref: i - 1)
@@ -280,21 +285,21 @@ public enum Scorer {
                     op = .insert(hyp: j - 1)
                 }
 
-                cost[i][j] = best
-                back[i][j] = op
+                cost[i * stride + j] = best
+                back[i * stride + j] = op
             }
         }
 
-        return traceback(back, n: n, m: m)
+        return traceback(back, stride: stride, n: n, m: m)
     }
 
     /// Walks the backpointers and returns operations in reference order, with inserted
     /// words spliced in at the position they were heard.
-    static func traceback(_ back: [[Op?]], n: Int, m: Int) -> [Op] {
+    static func traceback(_ back: [Op?], stride: Int, n: Int, m: Int) -> [Op] {
         var out: [Op] = []
         var i = n, j = m
         while i > 0 || j > 0 {
-            guard let op = back[i][j] else { break }
+            guard let op = back[i * stride + j] else { break }
             out.append(op)
             switch op {
             case .match, .partial, .substitute:
