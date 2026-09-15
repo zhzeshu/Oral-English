@@ -6,9 +6,11 @@ import Foundation
 //   ./probe.sh LoopProbe
 //   ./probe.sh LoopProbe "The sentence to read." 8
 //
-// The prompts are SPOKEN rather than printed, because a terminal command cannot ask someone
-// to speak on cue: stdout does not reach them until the process exits. Ava tells the user
-// what to do, waits, records, transcribes and scores.
+// The prompts are SPOKEN and shown in a small floating window, because a terminal command
+// cannot ask someone to speak on cue: this probe runs under `open`, so stdout is captured
+// and printed only after it exits. Ava says what to do; the window holds the sentence on
+// screen while it is read, because hearing a line once and reciting it from memory measures
+// memory rather than pronunciation.
 //
 // This also answers the question the scorer depends on and cannot answer for itself:
 // whether SFTranscriptionSegment.confidence is non-zero on this machine.
@@ -40,7 +42,8 @@ struct LoopProbe {
         }
         print("reference voice: \(voice.name) [\(voice.tier.label)]")
         print("sentence: \"\(sentence)\"")
-        print("\nListen to your speakers. The prompts are spoken.\n")
+        print("\nListen to your speakers. The sentence is on screen in the probe window.\n")
+        ProbeApp.prompt(sentence: sentence, status: "checking permissions…")
 
         let permissions = PermissionService()
         permissions.refresh()
@@ -68,11 +71,14 @@ struct LoopProbe {
         }
 
         // 1. Instruction, then the reference, then a clear go signal.
+        ProbeApp.prompt(status: "listen first — do not read yet")
         await say("Listen to this sentence, then read it back after the tone.")
         try? await Task.sleep(for: .milliseconds(400))
         print("playing the reference…")
+        ProbeApp.prompt(status: "playing the reference…")
         await say(sentence)
         try? await Task.sleep(for: .milliseconds(600))
+        ProbeApp.prompt(status: "get ready — three, two, one")
         await say("Now read it. Beginning in three. Two. One.")
 
         // Let the tail of synthesis clear before arming, so it does not bleed into the take.
@@ -91,6 +97,7 @@ struct LoopProbe {
             return
         }
         print("RECORDING for \(Int(recordSeconds))s — speak now")
+        ProbeApp.prompt(status: "READ IT NOW")
 
         var peak = 0.0
         let ticks = Int(recordSeconds * 2)
@@ -99,6 +106,11 @@ struct LoopProbe {
             peak = max(peak, recorder.level)
             let bar = String(repeating: "#", count: Int(recorder.level * 40))
             print(String(format: "  %.1fs  %.2f  %@", Double(tick + 1) * 0.5, recorder.level, bar))
+            // The same bar on screen, so a dead microphone is visible while there is still
+            // time to do something about it rather than in the report afterwards.
+            let elapsed = Double(ticks - tick - 1) * 0.5
+            ProbeApp.prompt(status: "recording — \(String(format: "%.0f", elapsed))s left   "
+                            + String(repeating: "▁", count: max(1, Int(recorder.level * 30))))
         }
 
         guard let result = await recorder.stop() else {
@@ -113,6 +125,7 @@ struct LoopProbe {
         print("kept at: \(result.url.path)")
 
         if peak < 0.05 {
+            ProbeApp.prompt(status: "nothing was captured — the level never left the floor")
             print("\nThe level never rose above the floor, so nothing was captured.")
             print("Either the prompt was not heard, or the microphone is muted in hardware.")
             return
@@ -120,12 +133,16 @@ struct LoopProbe {
 
         // 3. Transcribe. Recording is still worth keeping when scoring is unavailable.
         guard canScore else {
+            ProbeApp.prompt(status: "recorded, but recognition is not granted — no score")
             print("\nrecognition unavailable: \(permissions.matrix.scoringNote ?? "not granted")")
             print("The take is kept, so it can be scored later:")
             print("  ./probe.sh TranscribeProbe \(result.url.path) \"\(sentence)\"")
+            try? await Task.sleep(for: .seconds(4))
+            ProbeApp.dismissPrompt()
             return
         }
         print("\ntranscribing on this machine…")
+        ProbeApp.prompt(status: "transcribing on this Mac…")
         let transcriber = TranscriberService()
         let transcript: Transcript
         do {
@@ -162,6 +179,9 @@ struct LoopProbe {
         if !report.problemWords.isEmpty {
             print("  words to work on: \(report.problemWords.joined(separator: ", "))")
         }
+        ProbeApp.prompt(status: "\(Int((report.accuracy * 100).rounded()))% — \(report.verdict.rawValue)"
+                        + "   (heard: \(transcript.text))")
+
         print("\n  word by word:")
         for w in report.words {
             let mark: String
@@ -174,5 +194,10 @@ struct LoopProbe {
             }
             print("    \(mark) \(w.display)\(w.heard.map { $0 == w.normalized ? "" : "  (heard \"\($0)\")" } ?? "")")
         }
+
+        // ProbeApp terminates the process the moment this returns, which would take the
+        // window with it before the score could be read.
+        try? await Task.sleep(for: .seconds(6))
+        ProbeApp.dismissPrompt()
     }
 }

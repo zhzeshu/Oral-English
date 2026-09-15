@@ -74,6 +74,18 @@ swiftc -Onone -parse-as-library \
     -o "$APP/Contents/MacOS/$NAME" \
     "${CORE[@]}" Sources/Tools/ProbeApp.swift "$SRC"
 
+# Compile-only escape hatch. Probes are excluded from both build.sh and test.sh -- they
+# each carry their own @main -- so nothing else notices when one stops compiling after a
+# change to Core or Services. This makes "does every probe still build?" a one-liner:
+#
+#   for p in Sources/Tools/*Probe.swift; do
+#       ORAL_PROBE_BUILD_ONLY=1 ./probe.sh "$(basename "$p" .swift)"
+#   done
+if [ "${ORAL_PROBE_BUILD_ONLY:-0}" = "1" ]; then
+    echo "compiled $NAME"
+    exit 0
+fi
+
 # Sign the bundle so there is a code identity for any privacy grant to attach to. Prefer
 # the project certificate when it exists, so probe grants are as stable as the app's.
 SIGN="${ORAL_PROBE_SIGN_ID:-}"

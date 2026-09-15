@@ -11,6 +11,9 @@ import Foundation
 //   ./probe.sh RecordProbe ~/take.m4a          keeps the file, so you can play it back
 //   ./probe.sh RecordProbe ~/take.m4a 6        records for 6 seconds
 //
+// The sentence to read is printed as well as spoken, and stays on screen for the whole
+// recording. Set ORAL_SENTENCE to change it.
+//
 // Passes when the duration matches what was asked for within half a second, the file is at
 // least 20 KB, and it opens in QuickTime.
 //
@@ -21,6 +24,13 @@ import Foundation
 struct RecordProbe {
     @MainActor
     static func main() async throws {
+        // Unbuffered, because every prompt here is useless if it arrives late. Swift's
+        // stdout is fully buffered whenever it is not a terminal -- which is exactly the
+        // case when probe.sh captures output -- so the sentence to read would appear only
+        // after the recording had already finished. Verified: with buffering on, a run
+        // showed the level bars and the sentence together at exit.
+        setvbuf(stdout, nil, _IONBF, 0)
+
         // Deliberately does NOT construct PermissionService, because that reads the
         // speech-recognition status — and merely *reading* it is privacy-gated. In direct
         // mode the terminal is the responsible process and has no
@@ -38,8 +48,9 @@ struct RecordProbe {
             }
         }
 
-        // Spoken prompts, because a terminal command cannot ask someone to speak on cue:
-        // stdout does not reach them until the process exits.
+        // Spoken as well as printed. The text on screen is what you read from; the voice
+        // is what tells you when to start, which a printed line cannot do if you are
+        // looking at the sentence rather than at the cursor.
         let provider = AppleVoiceProvider()
         let voices = await provider.availableVoices()
         let voice = VoiceRanking.best(voices)
@@ -51,8 +62,16 @@ struct RecordProbe {
 
         let promptSentence = ProcessInfo.processInfo.environment["ORAL_SENTENCE"]
             ?? "The fog came in on little cat feet."
+
+        // Printed as well as spoken. Hearing a sentence once is not enough to read it back
+        // -- the text has to stay on screen while you speak.
+        print("\nread this:\n")
+        print("    \(promptSentence)\n")
+        print("(override with ORAL_SENTENCE=\"...\")")
+
         await say("Listen, then read the sentence back after the countdown.")
         await say(promptSentence)
+        print("\nstarting in three...")
         await say("Now read it. Three. Two. One.")
         try? await Task.sleep(for: PracticeController.postSynthesisSettle)
 
@@ -68,7 +87,8 @@ struct RecordProbe {
         defer { if !keep { try? FileManager.default.removeItem(at: url) } }
 
         let recorder = AudioRecorderService()
-        print("\nrecording \(Int(seconds)) seconds. SPEAK NOW.")
+        print("\nrecording \(Int(seconds)) seconds. READ IT NOW:")
+        print("    \(promptSentence)")
         do {
             try recorder.start(to: url)
         } catch let f as AppFailure {

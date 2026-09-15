@@ -7,10 +7,28 @@ gates need someone to speak, unplug a device, or force-quit.
 Sources/Services/PracticeController.swift, Sources/Services/DelegateShim.swift,
 Sources/Tools/SettingsProbe.swift, Tests/RecorderSettingsTests.swift,
 Tests/ChunkPlanTests.swift
-**Verified:** ./test.sh (236 tests in 17 suites), ./build.sh clean,
-./probe.sh SettingsProbe
-**Blocked:** the probe that records three seconds, and everything downstream of it. Not
-attempted rather than assumed.
+**Verified:** ./test.sh (252 tests in 20 suites), ./build.sh clean,
+./probe.sh SettingsProbe, and — 2026-09-15 — the recording path end to end:
+`ORAL_PROBE_DIRECT=1 ./probe.sh RecordProbe <path> 3` produced 3.09s, 82,735 bytes,
+136,128 frames at 44,100 Hz, finalized by the delegate, peak level 0.67. Capture, encode,
+finalize and read-back are proven.
+**Blocked:** a take of the user's own voice reading a known sentence. The path works; what
+is missing is a labelled recording, which is also what item 11 needs. The device-unplug and
+force-quit gates are still unattempted.
+
+**2026-09-15 — the prompt was audible but invisible.** The probe spoke the sentence through
+Ava and never printed it, and Swift's stdout is fully buffered when it is not a terminal, so
+even the "SPEAK NOW" line arrived after the recording had ended. Reported from use: "I have
+not seen the sentence, so I do not read now." Fixed in two places:
+
+- `RecordProbe` sets `setvbuf(stdout, nil, _IONBF, 0)` and prints the sentence before
+  speaking it, then again at the moment recording starts, so it stays on screen throughout.
+- `LoopProbe` runs under `open`, where stdout is captured and cannot reach the screen at
+  all, so `ProbeApp` grew a floating prompt window: the sentence in 24pt, and a status line
+  that tracks listen / get ready / READ IT NOW / seconds remaining / transcribing / score.
+
+Hearing a sentence once and reciting it from memory measures memory, not pronunciation. The
+text has to be visible while it is read.
 
 **Verification style:** probe-first, then verified against QuickTime. The activity state
 machine and the level conversion are pure and unit-tested.
