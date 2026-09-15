@@ -1,5 +1,16 @@
 # 03 — Normalizer and scorer
 
+**Status:** DONE — 2026-09-14
+**Changed:** Sources/Core/Normalizer.swift, Sources/Core/Scorer.swift,
+Tests/NormalizerTests.swift, Tests/ScorerTests.swift
+**Verified:** ./test.sh (132 tests in 8 suites passed), ./build.sh (signature verified).
+Property tests run 400 randomized reference/transcript pairs per invariant.
+**Caveat:** the "before starting" step — capturing three to five real transcripts with the
+transcription probe — was **not** done, because it needs a microphone grant and a recording.
+The synthetic assumptions about transcript shape are therefore still unvalidated. Item 10
+captures the fixtures and item 11 calibrates against them; expect some expectations here to
+need rewriting rather than merely retuning.
+
 **Verification style:** test-first. The most test-driven item in the project and the one
 where the test loop pays for itself.
 
@@ -170,8 +181,30 @@ Cache it per take. Never call the tokenizer or the aligner from a view body.
 
 ## Done when
 
-- [ ] `./test.sh` passes with every table row asserted.
-- [ ] The property tests hold over randomized inputs: accuracy always in range, counts
+- [x] `./test.sh` passes with every table row asserted.
+- [x] The property tests hold over randomized inputs: accuracy always in range, counts
       always summing, never NaN.
-- [ ] The similarity function and both confidence constants are named in code, not prose.
-- [ ] `./scripts/check-core-imports.sh` passes.
+- [x] The similarity function and both confidence constants are named in code, not prose.
+- [x] `./scripts/check-core-imports.sh` passes.
+
+
+## Findings while executing this item
+
+Three implementation bugs the tests caught immediately, all of which would have produced
+silently wrong scores:
+
+1. **Diacritics were not folded.** `é` is a letter, so it survives punctuation stripping
+   untouched, and `café` compared as a different word from `cafe`. Diacritic folding moved
+   into the Unicode fold step, where it belongs.
+2. **`NLTokenizer` splits `p.m.` into `p` and `m`.** The plan's expectation that
+   abbreviation dots vanish into `pm` was therefore unreachable. Dotted abbreviations are
+   now collapsed before tokenizing, by a character scan — a regex with a word-boundary
+   lookbehind did not match. A single abbreviation such as `Dr.` is deliberately left for
+   ordinary punctuation stripping.
+3. **Symbol alternates could never fire.** The word tokenizer discards `%` before an
+   alternates rule sees it. Symbols are now expanded to words in the text, on both sides
+   symmetrically, which is also the better design: there is no competing numeric spelling
+   to preserve, so `50%` and `50 percent` simply produce the same tokens.
+
+The asymmetric cost table is verified working as intended: an insertion scores strictly
+better than the equivalent deletion, asserted directly rather than assumed.
