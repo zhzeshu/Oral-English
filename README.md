@@ -42,6 +42,12 @@ Voices. Tick Ava, or Tom for a male voice.
 
 The app detects this and prompts on first run.
 
+## Picking up the work
+
+Start with [HANDOFF.md](HANDOFF.md). It records the current state, the three things that
+actually block progress, the verified facts about this machine, and the traps that cost real
+debugging time — so none of it has to be rediscovered.
+
 ## Plan
 
 The implementation plan lives in [docs/plan/](docs/plan/), split into thirteen work items
