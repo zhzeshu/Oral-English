@@ -1,5 +1,13 @@
 # 02 — Core models, text intake, and naming
 
+**Status:** DONE — 2026-09-14
+**Changed:** Sources/Core/Models.swift, AppFailure.swift, Log.swift, TextIntake.swift,
+SentenceSplitter.swift, Paths.swift; Tests/ModelsTests.swift, AppFailureTests.swift,
+TextIntakeTests.swift, SentenceSplitterTests.swift, PathsTests.swift;
+scripts/check-core-imports.sh
+**Verified:** ./test.sh (77 tests in 6 suites passed), ./build.sh (signature verified),
+./scripts/check-core-imports.sh (passes), breaking one assertion exits 1 and names the test
+
 **Verification style:** test-first. Real red-green-refactor, built entirely through
 `./test.sh` with no app launch.
 
@@ -167,7 +175,26 @@ splitting the library between old and new folders.
 
 ## Done when
 
-- [ ] `./test.sh` passes with every table row above asserted.
-- [ ] Deliberately breaking one assertion makes `./test.sh` exit non-zero and name the test.
-- [ ] `./scripts/check-core-imports.sh` passes.
-- [ ] The golden naming table is committed.
+- [x] `./test.sh` passes with every table row above asserted.
+- [x] Deliberately breaking one assertion makes `./test.sh` exit non-zero and name the test.
+- [x] `./scripts/check-core-imports.sh` passes.
+- [x] The golden naming table is committed, in `Tests/PathsTests.swift`.
+
+
+## Findings while executing this item
+
+1. **`CharacterSet.controlCharacters` includes Unicode *format* characters, not only C0
+   controls.** Verified by probe: U+200B zero-width space, U+200E left-to-right mark and
+   U+FEFF are members; U+00A0 non-breaking space is not. So `TextIntake` strips invisible
+   formatting characters as well as control characters. That is the behavior we want — an
+   invisible character inside a word would silently break word matching and produce a diff
+   nobody could explain — but it was not what the plan predicted, and it is now documented
+   and tested in both directions.
+2. **`os` was added to the import allowlist.** `Log.swift` needs `os.Logger`, which is not
+   Foundation. Verified that it constructs and logs inside a plain command-line binary with
+   no permissions and no run loop, so it does not compromise the fast test loop. This is the
+   one addition to that allowlist and the reason is recorded in the script.
+3. **The transliteration path matters more than expected.** A CJK title yields a real slug
+   (`zhe-shi-yi-ge-biao-ti`) rather than the `untitled` fallback, which keeps the folder
+   identifiable in Finder. The fallback now only triggers for titles with no transliterable
+   content at all, such as `"???"` or an emoji run.

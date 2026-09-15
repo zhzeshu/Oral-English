@@ -12,7 +12,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-ALLOWED="Foundation NaturalLanguage Testing"
+# os is allowed deliberately: os.Logger lives in libSystem, needs no permissions, no run
+# loop and no framework bundle, and works inside the plain CLI test binary. It is the one
+# addition to this list since the rule was written, and it exists so that a silent failure
+# leaves a trace -- see Sources/Core/Log.swift.
+ALLOWED="Foundation NaturalLanguage Testing os"
 TREES="Sources/Core Tests"
 violations=0
 
@@ -36,7 +40,7 @@ done
 if [ "$violations" -gt 0 ]; then
     cat >&2 <<MSG
 
-$violations disallowed import(s). Sources/Core and Tests must import only: $ALLOWED
+$violations disallowed import(s). Allowed in Sources/Core and Tests: $ALLOWED
 
 This is what lets test.sh compile the logic with no frameworks and no permission
 prompts. Anything needing AVFoundation, Speech, SwiftUI or AppKit belongs in
