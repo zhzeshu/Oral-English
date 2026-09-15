@@ -94,6 +94,39 @@ public final class PracticeController {
         }
     }
 
+    // MARK: - Recording
+    //
+    // The controller owns the exclusive audio axis; it does not own the recorder. Starting
+    // and stopping the hardware stays with `AppModel`, because stopping a take is not just
+    // a state change -- the file has to be adopted into the library and scored, and a
+    // controller that reached into the store would point the dependency the wrong way.
+
+    /// Claims the audio axis for recording. False when something else already holds it,
+    /// which is what structurally prevents recording over the reference playing.
+    public func beginRecording(_ ref: TargetRef) -> Bool {
+        guard audio.isIdle else { return false }
+        audio = .recording(ref)
+        inputLevel = 0
+        return true
+    }
+
+    /// Releases the audio axis. Safe to call when nothing was recording.
+    public func finishRecording() {
+        if case .recording = audio { audio = .idle }
+        inputLevel = 0
+    }
+
+    /// The target currently being recorded, if any.
+    public var recordingTarget: TargetRef? {
+        if case .recording(let ref) = audio { return ref }
+        return nil
+    }
+
+    /// Stops reference playback and clears the axis.
+    ///
+    /// Deliberately does **not** stop the recorder: a recording in progress has a file that
+    /// must be finalized and adopted, so it is stopped through `AppModel.stopAudio()`
+    /// instead. Calling this while recording would strand the take in `incoming/`.
     public func stopAll() {
         voice.stop()
         audio = .idle

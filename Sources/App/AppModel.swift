@@ -137,6 +137,199 @@ public final class AppModel {
     public var recorderElapsed: TimeInterval { recorder.elapsed }
     public var recorderNoInput: Bool { recorder.noInputDetected }
 
+    // MARK: - Recording
+    //
+    // This is the whole reason the app exists, and until now it was the one thing missing:
+    // the recorder was constructed and its level was plumbed into the view, but nothing
+    // ever called start or stop, so no take could be created at all. The row showed a mic
+    // glyph that was not a button and the empty state advertised a shortcut bound to
+    // nothing.
+    //
+    // The sequence, and why each step is where it is:
+    //
+    //   1. Ask for permission on the first record tap, never at launch -- a privacy prompt
+    //      before the user has done anything reads as an app demanding access.
+    //   2. Record into `incoming/`, not into `takes/`. A crash mid-take then leaves an
+    //      obvious orphan the store already knows how to adopt, rather than a half take
+    //      sitting among the good ones.
+    //   3. Judge the finished file with `TakeAcceptance` before it becomes a take.
+    //   4. Adopt, append, then score. The take is on disk and visible before scoring
+    //      starts, so a recognizer failure loses the score and never the recording.
+
+    /// True while this target is the one being recorded.
+    public func isRecording(_ ref: TargetRef) -> Bool { practice.recordingTarget == ref }
+
+    /// One button, two states. The row and ⌘R both route here.
+    public func toggleRecording(_ ref: TargetRef) async {
+        if practice.recordingTarget == ref {
+            await stopRecording()
+        } else if practice.recordingTarget == nil {
+            await startRecording(ref)
+        }
+    }
+
+    public func startRecording(_ ref: TargetRef) async {
+        guard let folder = selectedFolder, loaded != nil else { return }
+
+        // Asked for here, on the first tap, rather than at launch.
+        var matrix = permissions.matrix
+        if !matrix.canRecord {
+            matrix = await requestRecordingPermissions()
+        }
+        guard practice.canRecord(matrix) else {
+            if !matrix.canRecord { errorMessage = AppFailure.micDenied.userMessage }
+            return
+        }
+
+        let id = UUID()
+        let staged: URL
+        do {
+            staged = try await store.stagingURL(in: folder, takeID: id)
+        } catch let f as AppFailure {
+            errorMessage = f.userMessage
+            return
+        } catch {
+            Log.unexpected(Log.store, error, context: "staging url")
+            return
+        }
+
+        // The axis is claimed before the hardware starts, so a second tap arriving during
+        // `start` cannot open a second recorder.
+        guard practice.beginRecording(ref) else { return }
+        do {
+            try recorder.start(to: staged)
+        } catch let f as AppFailure {
+            practice.finishRecording()
+            Log.failure(Log.audio, f, context: "record start")
+            errorMessage = f.userMessage
+        } catch {
+            practice.finishRecording()
+            Log.unexpected(Log.audio, error, context: "record start")
+        }
+        pendingTake = PendingTake(id: id, target: ref, startedAt: Date())
+    }
+
+    /// Finalizes the take, adopts it into the library, then scores it.
+    public func stopRecording() async {
+        guard let pending = pendingTake, let folder = selectedFolder, let loaded else { return }
+        pendingTake = nil
+
+        let result = await recorder.stop()
+        practice.finishRecording()
+
+        guard let result else {
+            errorMessage = AppFailure.recorderFailedToStart(reason: "no file was produced").userMessage
+            return
+        }
+
+        let verdict = TakeAcceptance.evaluate(
+            duration: result.duration,
+            peakLevel: result.peakLevel,
+            noInputDetected: recorder.noInputDetected,
+            isReadable: result.isReadable)
+
+        if case .discard(let reason) = verdict {
+            try? FileManager.default.removeItem(at: result.url)
+            errorMessage = reason.note
+            return
+        }
+
+        // The reference text is captured now, at the moment of recording, so a later edit
+        // to the passage cannot retroactively change what this take was scored against.
+        guard let referenceText = loaded.passage.text(for: pending.target) else { return }
+
+        let take: Take
+        do {
+            let relative = try await store.importRecording(
+                tempURL: result.url, into: folder,
+                target: pending.target, recordedAt: pending.startedAt, takeID: pending.id)
+            take = Take(
+                id: pending.id,
+                target: pending.target,
+                recordedAt: pending.startedAt,
+                audioPath: relative,
+                durationSeconds: result.duration,
+                referenceText: referenceText)
+            self.loaded = try await store.appendTake(take, to: folder)
+            rebuildRowSummaries()
+            await reloadSummaries()
+        } catch let f as AppFailure {
+            Log.failure(Log.store, f, context: "adopt take")
+            errorMessage = f.userMessage
+            return
+        } catch {
+            Log.unexpected(Log.store, error, context: "adopt take")
+            return
+        }
+
+        // Kept, but not scored: an empty transcript scores 0%, which reads as a verdict on
+        // the speaker when it is a verdict on the microphone.
+        if case .keepWithoutScoring(let reason) = verdict {
+            errorMessage = reason.note
+            return
+        }
+
+        // Scoring reuses rescore, so there is exactly one path from audio to a score.
+        await rescore(take)
+    }
+
+    /// Stops whatever is happening, finalizing a take if one is in progress.
+    ///
+    /// The transient transport bar routes its stop button here rather than to
+    /// `practice.stopAll()`, which would clear the state and strand the file in `incoming/`.
+    public func stopAudio() async {
+        if practice.recordingTarget != nil {
+            await stopRecording()
+        } else {
+            practice.stopAll()
+            player.stopAll()
+        }
+    }
+
+    /// Moves anything left in `incoming/` into `recovered/`.
+    ///
+    /// The library README has promised since it was written that the app "adopts or
+    /// quarantines" an interrupted recording on the next launch, and nothing did either --
+    /// which mattered little while no code ever wrote to `incoming/`, and matters now that
+    /// recording does.
+    ///
+    /// Quarantine rather than adopt, deliberately. A staged file is named only by its take
+    /// id, so which sentence it belongs to is not recoverable from disk; adopting it would
+    /// mean inventing a target. Moving it to `recovered/` keeps the audio, keeps the
+    /// library honest, and leaves a file the user can play.
+    private func sweepInterruptedTakes(in folderName: String) async {
+        // Never while a take is in flight: the file being written lives in `incoming/` too.
+        guard practice.recordingTarget == nil, pendingTake == nil else { return }
+        let pending = await store.pendingIncoming(in: folderName)
+        guard !pending.isEmpty else { return }
+        var moved = 0
+        for url in pending {
+            do {
+                try await store.quarantineIncoming(url, in: folderName)
+                moved += 1
+            } catch {
+                Log.unexpected(Log.store, error, context: "quarantine incoming")
+            }
+        }
+        guard moved > 0 else { return }
+        Log.store.info("quarantined \(moved, privacy: .public) interrupted take(s)")
+        errorMessage = moved == 1
+            ? "A recording was interrupted last time. It is in the passage's recovered folder."
+            : "\(moved) recordings were interrupted last time. They are in the passage's recovered folder."
+    }
+
+    /// What is being recorded right now, and where it came from.
+    ///
+    /// The id and the start time are chosen before recording and reused for the filename,
+    /// so the name on disk matches the take it belongs to even if the take is adopted
+    /// seconds later.
+    private struct PendingTake {
+        var id: UUID
+        var target: TargetRef
+        var startedAt: Date
+    }
+    private var pendingTake: PendingTake?
+
     // MARK: - Take actions
 
     public func playTake(_ take: Take) async {
@@ -154,6 +347,30 @@ public final class AppModel {
         } catch {
             Log.unexpected(Log.audio, error, context: "play take")
         }
+    }
+
+    /// Reference, pause, then your own take — the comparison the row's A/B glyph has always
+    /// implied and never performed.
+    ///
+    /// Sequenced from the two paths that already work rather than through
+    /// `AudioPlayerService.playAB`, which wants a baked reference file. Nothing in the app
+    /// bakes yet, and speaking the reference live is indistinguishable at this granularity:
+    /// synthesis starts in well under the gap that separates the two halves anyway. When
+    /// baking arrives this becomes a file-to-file comparison without changing the call.
+    public func compareBest(_ ref: TargetRef) async {
+        guard let loaded, let take = loaded.bestTake(for: ref) else { return }
+        guard practice.audio.isIdle else { return }
+        await playReference(ref)
+        // Long enough to hear as two separate things, short enough to hold the comparison
+        // in your head.
+        try? await Task.sleep(for: .milliseconds(400))
+        await playTake(take)
+    }
+
+    /// True when this target has a take worth comparing against.
+    public func canCompare(_ ref: TargetRef) -> Bool {
+        guard let loaded, let take = loaded.bestTake(for: ref) else { return false }
+        return loaded.hasAudio(take) && practice.audio.isIdle
     }
 
     public func deleteTake(_ take: Take) async {
@@ -264,6 +481,7 @@ public final class AppModel {
         do {
             loaded = try await store.load(folderName: folderName)
             rebuildRowSummaries()
+            await sweepInterruptedTakes(in: folderName)
         } catch let f as AppFailure {
             Log.failure(Log.store, f, context: "load \(folderName)")
             loaded = nil

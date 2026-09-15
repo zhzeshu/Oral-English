@@ -17,9 +17,14 @@ struct SentenceRowView: View {
     let isSpeaking: Bool
     let spokenRange: (location: Int, length: Int)?
     let canPlay: Bool
+    let isRecordingThis: Bool
+    let canRecord: Bool
+    let canCompare: Bool
 
     var onSelect: () -> Void
     var onPlay: () -> Void
+    var onRecord: () -> Void
+    var onCompare: () -> Void
     var onToggleExpand: () -> Void
     var onShowHistory: () -> Void
 
@@ -115,8 +120,21 @@ struct SentenceRowView: View {
             }
             .buttonStyle(.plain)
             .disabled(!canPlay && !isSpeaking)
-            Image(systemName: "mic")
-            Image(systemName: "arrow.left.arrow.right")
+            // One button, two states: start a take, or stop the one running. It was a
+            // plain glyph until now -- decoration where the app's whole purpose belonged.
+            Button(action: onRecord) {
+                Image(systemName: isRecordingThis ? "stop.fill" : "mic")
+                    .foregroundStyle(isRecordingThis ? Color.red : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canRecord && !isRecordingThis)
+            .help(isRecordingThis ? "Stop recording (⌘R)" : "Record yourself reading this (⌘R)")
+            Button(action: onCompare) {
+                Image(systemName: "arrow.left.arrow.right")
+            }
+            .buttonStyle(.plain)
+            .disabled(!canCompare)
+            .help("Hear the reference, then your best take")
             if summary.takeCount > 0 {
                 Button {
                     onToggleExpand()

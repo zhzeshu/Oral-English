@@ -18,6 +18,8 @@ public final class AudioRecorderService {
     public private(set) var elapsed: TimeInterval = 0
     /// Set when the input has been at the floor long enough to mean something is wrong.
     public private(set) var noInputDetected = false
+    /// Highest level seen since `start`. Survives the take, unlike `level`.
+    public private(set) var peakLevel: Double = 0
 
     public init() {}
 
@@ -45,6 +47,15 @@ public final class AudioRecorderService {
         public var duration: Double
         /// True when the file was finalized by the delegate rather than salvaged.
         public var wasClean: Bool
+        /// True when the finalized file opens as audio. A salvaged take sometimes does not,
+        /// and `TakeAcceptance` needs to know rather than guess from the duration.
+        public var isReadable: Bool
+        /// The highest normalized level seen during the take, 0 through 1.
+        ///
+        /// Carried on the result because the live `level` is back to zero by the time a
+        /// caller inspects it, and the peak is what distinguishes "spoke quietly" from
+        /// "microphone is muted".
+        public var peakLevel: Double
     }
 
     // MARK: - Recording
@@ -82,6 +93,7 @@ public final class AudioRecorderService {
         self.delegate = shim
         isRecording = true
         noInputDetected = false
+        peakLevel = 0
         silenceSince = nil
         startMetering()
     }
@@ -116,11 +128,11 @@ public final class AudioRecorderService {
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         guard size > 0 else { return nil }
 
-        let duration = (try? AVAudioFile(forReading: url)).map {
-            Double($0.length) / $0.fileFormat.sampleRate
-        } ?? reportedDuration
+        let file = try? AVAudioFile(forReading: url)
+        let duration = file.map { Double($0.length) / $0.fileFormat.sampleRate } ?? reportedDuration
 
-        return Result(url: url, duration: duration, wasClean: clean)
+        return Result(url: url, duration: duration, wasClean: clean,
+                      isReadable: file != nil, peakLevel: peakLevel)
     }
 
     public func cancel() {
@@ -131,6 +143,7 @@ public final class AudioRecorderService {
         delegate = nil
         isRecording = false
         level = 0
+        peakLevel = 0
     }
 
     // MARK: - Metering
@@ -148,6 +161,7 @@ public final class AudioRecorderService {
         guard let recorder, recorder.isRecording else { return }
         recorder.updateMeters()
         level = AudioLevel.normalized(decibels: Double(recorder.averagePower(forChannel: 0)))
+        peakLevel = max(peakLevel, level)
         elapsed = recorder.currentTime
 
         // Acting on the meter, not just drawing it. One check catches a dead microphone, a

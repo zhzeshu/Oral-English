@@ -47,8 +47,14 @@ struct PassageDetailView: View {
                                 isSpeaking: model.practice.speakingTarget == ref,
                                 spokenRange: model.practice.spokenRange,
                                 canPlay: model.practice.canPlayReference(),
+                                isRecordingThis: model.isRecording(ref),
+                                canRecord: model.practice.recordingTarget == nil
+                                    && model.practice.audio.isIdle,
+                                canCompare: model.canCompare(ref),
                                 onSelect: { model.selectedTarget = ref },
                                 onPlay: { Task { await model.playReference(ref) } },
+                                onRecord: { Task { await model.toggleRecording(ref) } },
+                                onCompare: { Task { await model.compareBest(ref) } },
                                 onToggleExpand: {
                                     model.expandedTarget = model.expandedTarget == ref ? nil : ref
                                 },
@@ -65,7 +71,9 @@ struct PassageDetailView: View {
                 level: model.recorderLevel,
                 elapsed: model.recorderElapsed,
                 noInputDetected: model.recorderNoInput,
-                onStop: { model.practice.stopAll() }
+                // Through the model, not straight to the controller: stopping a take has
+                // to finalize the file and adopt it, or the recording is stranded.
+                onStop: { Task { await model.stopAudio() } }
             )
         }
         .popover(item: $historyTarget) { ref in

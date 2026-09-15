@@ -7,11 +7,41 @@ gates need someone to speak, unplug a device, or force-quit.
 Sources/Services/PracticeController.swift, Sources/Services/DelegateShim.swift,
 Sources/Tools/SettingsProbe.swift, Tests/RecorderSettingsTests.swift,
 Tests/ChunkPlanTests.swift
-**Verified:** ./test.sh (252 tests in 20 suites), ./build.sh clean,
+**Verified:** ./test.sh (261 tests in 21 suites), ./build.sh clean,
 ./probe.sh SettingsProbe, and — 2026-09-15 — the recording path end to end:
 `ORAL_PROBE_DIRECT=1 ./probe.sh RecordProbe <path> 3` produced 3.09s, 82,735 bytes,
 136,128 frames at 44,100 Hz, finalized by the delegate, peak level 0.67. Capture, encode,
 finalize and read-back are proven.
+**2026-09-15 — the app could not record at all.** The gap audit for this item checked that
+`AudioRecorderService` existed, was tested and was probe-proven, and never checked that
+anything called it. Nothing did. `AppModel` constructed the recorder and published its
+level into the view; the row drew a `mic` glyph that was not a button; the empty state
+advertised "⌘R — record" bound to nothing. There was no code path from the UI to a take,
+which is why no take has ever existed.
+
+Closed by adding the orchestration that was missing:
+
+- `Core/TakeAcceptance.swift` — pure, 9 tests. Judges a finished recording before it becomes
+  a take: discard when unreadable or under 0.5s, keep-but-do-not-score when the microphone
+  heard nothing. That last branch exists because an empty transcript scores 0%, which reads
+  as a verdict on the speaker when it is a verdict on the hardware.
+- `AudioRecorderService.Result` now carries `peakLevel` and `isReadable`. The live `level` is
+  back to zero by the time a caller looks at it, and the peak is what separates "spoke
+  quietly" from "microphone is muted".
+- `PracticeController.beginRecording` / `finishRecording` claim and release the exclusive
+  audio axis. `stopAll()` deliberately does not stop the recorder, and now says so: a take
+  in progress has a file to finalize, so it is stopped through `AppModel.stopAudio()`.
+  The transport bar's stop button was routed straight to `stopAll()`, which would have
+  stranded the file in `incoming/`.
+- `AppModel.startRecording` / `stopRecording` / `toggleRecording`: permission asked on the
+  first tap rather than at launch, staged into `incoming/`, judged, adopted, appended, then
+  scored through the existing `rescore` so there is one path from audio to a score.
+- `AppModel.sweepInterruptedTakes` — the library README has promised since it was written
+  that an interrupted recording is adopted or quarantined on the next launch, and nothing
+  did either. It quarantines rather than adopts: a staged file is named only by its take id,
+  so its target is not recoverable from disk and adopting would mean inventing one.
+- ⌘R is a real `CommandMenu("Practice")` item, along with ⌘P for the reference.
+
 **Blocked:** a take of the user's own voice reading a known sentence. The path works; what
 is missing is a labelled recording, which is also what item 11 needs. The device-unplug and
 force-quit gates are still unattempted.

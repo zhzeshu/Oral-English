@@ -1,6 +1,17 @@
 # 09 — Player and A/B comparison
 
-**Status:** DONE — 2026-09-14
+**Status:** DONE — 2026-09-15. Playback was done on 2026-09-14; **A/B was not**, and the
+stamp said otherwise for a day.
+
+**2026-09-15 — A/B compare was a glyph, not a button.** `AudioPlayerService.playAB` existed
+and was probe-proven, and nothing in the app called it. The row drew
+`arrow.left.arrow.right` as plain decoration. Wired as `AppModel.compareBest`: speak the
+reference, pause 400ms, play the best take — sequenced from the two paths that already work
+rather than through `playAB`, which wants a baked reference file and nothing in the app bakes
+yet. When baking arrives it becomes file-to-file without changing the call site.
+
+`AudioActivity.playingAB` is still unused: the two halves report themselves as "Playing
+reference" then "Playing your take", which is more informative than a single "Comparing".
 **Changed:** Sources/Services/AudioPlayerService.swift, Sources/Tools/PlaybackProbe.swift
 **Verified:** ./test.sh (236 tests in 17 suites), ./build.sh clean,
 ./probe.sh PlaybackProbe — verified against baked reference audio, which needs no
