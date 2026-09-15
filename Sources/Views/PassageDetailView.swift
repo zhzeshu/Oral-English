@@ -57,6 +57,14 @@ struct PassageDetailView: View {
                 }
                 .padding(.vertical, 4)
             }
+            // Transient: renders nothing at all when audio is idle.
+            TransportBarView(
+                activity: model.practice.audio,
+                level: model.recorderLevel,
+                elapsed: model.recorderElapsed,
+                noInputDetected: model.recorderNoInput,
+                onStop: { model.practice.stopAll() }
+            )
         }
         .alert("Rename passage", isPresented: $renaming) {
             TextField("Title", text: $newTitle)

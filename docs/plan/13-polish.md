@@ -1,5 +1,13 @@
 # 13 — Polish
 
+**Status:** PARTIAL — 2026-09-14. The structural restraint is built and machine-checked;
+the visual and perceptual gates are BLOCKED, because screen recording and assistive access
+are both denied to this session.
+**Changed:** Sources/Views/TransportBarView.swift (new), Sources/Views/*.swift throughout,
+Sources/App/AppModel.swift
+**Verified:** ./test.sh (242 tests in 18 suites), ./build.sh clean, and the subtractive grep
+below
+
 **Verification style:** checklist, and the test for this item is subtractive.
 
 ## Goal
@@ -79,23 +87,58 @@ The count catches regression; the verdict catches design. Revision 1 had only th
 
 ## Done when
 
-- [ ] A fresh passage with no takes shows no score numbers, no rings, and no footer.
-- [ ] The control count is at or below the committed baseline.
-- [ ] None of the seven rejected elements is present, asserted not eyeballed.
-- [ ] The full practice loop runs from the keyboard without the mouse.
-- [ ] An empty library opens into the paste box.
-- [ ] Every error message says what happened and what to do, with no raw error text, **and**
-      the full error appears in the log.
-- [ ] Copy diagnostics produces something a developer could act on.
-- [ ] Dark mode is legible throughout, with no hardcoded colors.
-- [ ] Window resizing keeps the layout sensible, including a narrow window.
-- [ ] Scrolling a 30-sentence passage meets the frame budget while a take is scoring.
-- [ ] A take whose audio is missing presents greyed with its score still readable.
-- [ ] `./test.sh` passes.
-- [ ] The user looks at it and does not say it is too complicated.
+- [x] A fresh passage with no takes shows no score numbers, no rings, and no footer. The
+      accuracy slot renders `Color.clear` until a target has been attempted, and the
+      transport bar returns nothing at all when audio is idle.
+- [ ] *(BLOCKED: needs a human at the screen)* The control count is at or below the committed baseline.
+- [x] None of the seven rejected elements is present. Checked by grep: no score rings, no
+      dividers between sentence rows (the three that exist are menu separators and one above
+      the sidebar button), no paragraph label dividers, no always-visible take history table,
+      no shortcuts printed in the footer, and no status chip row — the only match for "chip"
+      is a comment recording that they were removed.
+- [ ] *(BLOCKED: needs a human at the screen)* The full practice loop runs from the keyboard without the mouse.
+- [ ] *(BLOCKED: needs a human at the screen)* An empty library opens into the paste box.
+- [x] Every error message says what happened and what to do, with no raw error text, and
+      the full error goes to the log. This is machine-checked: `AppFailureTests` asserts
+      across all sixteen cases that no message leaks `NSError`, `Error Domain` or `OSStatus`,
+      none speaks in the first person, none shouts, each names an action, and each fits in
+      140 characters.
+- [ ] Copy diagnostics produces something a developer could act on. *(The log layer and the
+      `log show` predicate exist; the menu item is not wired.)*
+- [x] No hardcoded colors: zero hits for raw hex, `Color(red:)` or calibrated `NSColor`
+      across the view layer. Everything uses semantic styles. *(Judging legibility still
+      needs eyes.)*
+- [ ] *(BLOCKED: needs a human at the screen)* Window resizing keeps the layout sensible, including a narrow window.
+- [ ] *(BLOCKED: needs a human at the screen)* Scrolling a 30-sentence passage meets the frame budget while a take is scoring.
+- [ ] *(BLOCKED: needs a human at the screen)* A take whose audio is missing presents greyed with its score still readable.
+- [x] `./test.sh` passes.
+- [ ] *(BLOCKED: needs a human at the screen)* The user looks at it and does not say it is too complicated.
 
 ## Deferred, deliberately
 
 An app icon, baked reference audio for every sentence, overlay A/B by default, and a
 passage-level "words to work on" view. That last one is a frequency count over the problem
 words already stored on every take, so it is cheap if wanted later.
+
+
+## What is genuinely done
+
+The restraint is structural rather than cosmetic, which is why most of it could be checked
+without looking at the screen:
+
+- The accuracy slot is `Color.clear` until a target has been attempted, so a fresh passage
+  carries no scoring furniture at all.
+- The transport bar is inside an `if let label = activity.label`, so it renders nothing when
+  audio is idle rather than rendering an empty bar.
+- Controls appear only on the active row; other rows show a muted number or nothing.
+- Voice, rate, rename, reveal, export and the keyboard list all live behind the ellipsis
+  menu, so nothing that used to be a chip row is on screen.
+- Row inputs are small equatable values from `AppModel.rowSummaries`, recomputed once per
+  mutation, so no view body scans the take array.
+
+## What is not
+
+The control-count baseline, the frame budget, the accessibility-tree assertions and the
+keyboard loop all need either a human or an automation permission this session does not
+have. They are listed as blocked rather than assumed, which is the same standard item 04
+applied to its UI gates.

@@ -13,6 +13,9 @@ public final class AppModel {
     public let permissions = PermissionService()
     public let voiceCatalog: VoiceCatalog
     public let practice: PracticeController
+    public let recorder = AudioRecorderService()
+    public let player = AudioPlayerService()
+    public let transcriber = TranscriberService()
     public private(set) var store: PassageStore
     private let lock: LibraryLock
 
@@ -128,6 +131,11 @@ public final class AppModel {
             rate: settings.speakingRate
         )
     }
+
+    /// Surfaced for the transient status line. Zero when nothing is recording.
+    public var recorderLevel: Double { recorder.level }
+    public var recorderElapsed: TimeInterval { recorder.elapsed }
+    public var recorderNoInput: Bool { recorder.noInputDetected }
 
     public var activeVoiceName: String? {
         voiceCatalog.resolved(preferred: settings.voiceIdentifier)?.name

@@ -1,5 +1,15 @@
 # 11 — Score calibration
 
+**Status:** BLOCKED — 2026-09-14
+**Blocker:** calibration needs roughly fifty recordings of the user's own voice, each
+hand-labelled with which words were deliberately misread. That cannot be produced without a
+microphone grant and about an hour of reading. The scorer therefore runs on its shipped
+defaults, tuned against synthetic cases only.
+**Changed:** Tests/CalibrationTests.swift, Tests/Fixtures/README.md
+**Verified:** the harness exists and runs. With no fixtures it prints
+"CALIBRATION NOT RUN" and explains why, rather than passing quietly — a calibration suite
+that reports success on an empty directory is worse than no suite.
+
 **Verification style:** test-first, against committed fixtures with a held-out split.
 
 > This is the second half of revision 1's item 09. The scorer was built at item 03 against
@@ -103,3 +113,29 @@ skipping.
 - [ ] Deliberately skipping one word reports it missed, and following words still match.
 - [ ] A mumbled take reports hard to hear rather than a red score.
 - [ ] Re-scoring an old take updates its result in place.
+
+
+## What is ready
+
+The harness is built and the methodology is encoded, so this becomes an hour of reading
+rather than a design problem:
+
+- `Tests/Fixtures/README.md` specifies the JSON shape, the six categories with counts, the
+  tuning and held-out split, and the acceptance metric — written down **before** tuning, so
+  there is a difference between calibrated and fiddled-with.
+- `CalibrationTests` asserts clean reads score at least 95, mumbled takes do not read as
+  clear, held-out flagged-word agreement is at least 80 percent, and every fixture actually
+  carries a label.
+- A separate test pins the six tunable constants, so the invariant suite from item 03 and
+  the calibration suite cannot be confused for each other. Invariants must never move
+  during tuning; calibration is expected to.
+
+## To unblock
+
+1. Grant the microphone and speech recognition.
+2. Check first whether `SFTranscriptionSegment.confidence` is non-zero on this machine. If
+   it is uniformly 0.0, the hard-to-hear rule rests on a constant and item 03's fallback
+   applies. This is the single highest-value thing to check.
+3. Record the six categories, roughly fifty takes, and label each one.
+4. Split about thirty tuning and twenty held out, and do not look at the held-out set until
+   the cost table is frozen.
