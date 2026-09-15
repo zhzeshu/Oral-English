@@ -407,6 +407,21 @@ public struct PassageSummary: Sendable, Identifiable, Hashable {
     public var isBroken: Bool { brokenReason != nil }
 }
 
+// MARK: - Dates
+
+extension Date {
+    /// Truncated to a whole second.
+    ///
+    /// The `.iso8601` coding strategy writes no fractional seconds, so a `Date` carrying
+    /// them does not survive a round trip and an equality assertion fails on two values
+    /// that print identically. Encoding fractions instead would work, but whole seconds
+    /// keep `passage.json` readable, which is the entire reason for storing it in the open.
+    /// Every date entering the model goes through here.
+    public var wholeSecond: Date {
+        Date(timeIntervalSince1970: (timeIntervalSince1970).rounded(.down))
+    }
+}
+
 // MARK: - Coding
 
 public enum PassageCoding {

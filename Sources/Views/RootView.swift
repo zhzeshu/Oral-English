@@ -1,16 +1,64 @@
 import SwiftUI
 
-/// Item 01 places a launchable window here so the bundle and signing mechanics can be
-/// verified against an empty app. Item 04 replaces the body with the real two-pane layout.
 struct RootView: View {
+    @Environment(AppModel.self) private var model
+    @State private var showingNewPassage = false
+
     var body: some View {
-        VStack(spacing: 8) {
-            Text("Oral English")
-                .font(.system(size: 22, weight: .medium))
-            Text("Paste a paragraph to begin.")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+        NavigationSplitView {
+            LibrarySidebarView(showingNewPassage: $showingNewPassage)
+        } detail: {
+            VStack(spacing: 0) {
+                if let kind = model.banner {
+                    BannerView(
+                        kind: kind,
+                        onAction: { bannerAction(kind) },
+                        onDismiss: { dismissBanner(kind) }
+                    )
+                }
+                PassageDetailView(showingNewPassage: $showingNewPassage)
+            }
         }
-        .frame(minWidth: 480, minHeight: 320)
+        .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 280)
+        .sheet(isPresented: $showingNewPassage) { NewPassageSheet() }
+        .task { await model.bootstrap() }
+        // A second instance cannot share the library safely, so it says why and quits
+        // rather than sitting there with a dead window. Two instances against one library
+        // lose takes silently, and the atomic writes make that loss harder to notice.
+        .alert("Already open", isPresented: .constant(model.isAnotherInstanceRunning)) {
+            Button("Quit") { Workspace.terminate() }
+        } message: {
+            Text(AppFailure.alreadyRunning.userMessage)
+        }
+        .alert(
+            "Something went wrong",
+            isPresented: Binding(
+                get: { model.errorMessage != nil && !model.isAnotherInstanceRunning },
+                set: { if !$0 { model.errorMessage = nil } }
+            )
+        ) {
+            Button("OK") { model.errorMessage = nil }
+        } message: {
+            Text(model.errorMessage ?? "")
+        }
+    }
+
+    private func bannerAction(_ kind: BannerKind) {
+        switch kind {
+        case .micDenied:
+            Workspace.openPrivacySettings(.microphone)
+        case .recognitionDenied, .offlineModelMissing:
+            Workspace.openPrivacySettings(.speechRecognition)
+        case .voiceQuality:
+            Workspace.openPrivacySettings(.spokenContent)
+        case .librarySynced:
+            Task { await model.relocateLibraryOutOfSync() }
+        }
+    }
+
+    private func dismissBanner(_ kind: BannerKind) {
+        guard kind.isDismissible else { return }
+        if kind == .voiceQuality { model.settings.voiceBannerDismissed = true }
+        model.banner = nil
     }
 }

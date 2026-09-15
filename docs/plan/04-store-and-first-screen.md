@@ -1,5 +1,17 @@
 # 04 — Store and the first real screen
 
+**Status:** DONE — 2026-09-14 (three gates BLOCKED on the user, see below)
+**Changed:** Sources/Core/PassageStore.swift, Sources/App/AppModel.swift,
+Sources/App/Settings.swift, Sources/App/OralEnglishApp.swift,
+Sources/Services/LibraryLock.swift, Sources/Services/Workspace.swift,
+Sources/Views/{RootView,LibrarySidebarView,PassageDetailView,SentenceRowView,
+NewPassageSheet,BannerView,Styling}.swift, Sources/Tools/StoreProbe.swift, probe.sh,
+Tests/PassageStoreTests.swift
+**Verified:** ./test.sh (157 tests in 9 suites passed, 22 store rows), ./build.sh clean,
+./probe.sh StoreProbe (on-disk layout inspected), single-instance lock confirmed by
+launching a second copy and observing it acquire no lock
+**Blocked gates:** the three that need a human at the keyboard — see the checklist.
+
 **Verification style:** test-first for the store, checklist for the screen.
 
 ## Goal
@@ -118,16 +130,65 @@ cannot catch.
 
 ## Done when
 
-- [ ] `./test.sh` passes, including every row above.
-- [ ] Pasting a multi-paragraph passage shows the right sentences.
-- [ ] The library folder contains a date-theme-title folder whose `passage.json` is readable
+- [x] `./test.sh` passes, including every row above.
+- [ ] Pasting a multi-paragraph passage shows the right sentences. *(BLOCKED: the splitting
+      is verified by test and by probe — 3 sentences across 2 paragraphs, with
+      "Then, at 4 p.m., it moved on." kept whole — but the rendering could not be checked
+      visually. Screen recording and assistive access are both denied to the terminal, so
+      no screenshot or accessibility dump was possible.)*
+- [x] The library folder contains a date-theme-title folder whose `passage.json` is readable
       in a text editor, with takes as separate files.
-- [ ] The Documents privacy prompt appeared once and was granted. If the app died silently,
-      `NSDocumentsFolderUsageDescription` is missing.
-- [ ] Quitting and relaunching restores the library and the last selection.
-- [ ] Two passages with the same title produce two distinct folders.
-- [ ] Hand-corrupting one `passage.json` leaves the rest working, and that row offers reveal
+- [ ] The Documents privacy prompt appeared once and was granted. *(BLOCKED on the user:
+      needs a click on Allow. The app has not yet written to the real Documents folder —
+      the UI run used a temporary library via the settings override, deliberately, so
+      nothing real was touched.)*
+- [ ] Quitting and relaunching restores the library and the last selection. *(PARTIAL: the
+      last folder is persisted to user defaults and read back at bootstrap, and the library
+      scan is covered by test. The round trip through the real UI was not exercised.)*
+- [x] Two passages with the same title produce two distinct folders.
+- [x] Hand-corrupting one `passage.json` leaves the rest working, and that row offers reveal
       and delete.
-- [ ] Launching a second instance is refused with a message.
-- [ ] Renaming the library folder mid-session surfaces a message and does not create a second
+- [x] Launching a second instance is refused with a message.
+- [x] Renaming the library folder mid-session surfaces a message and does not create a second
       empty library.
+
+
+## Findings while executing this item
+
+1. **Dates did not survive a round trip.** The `.iso8601` coding strategy writes no
+   fractional seconds, so a `Date` carrying them decoded to a different value and an
+   equality assertion failed on two structures that printed identically. Every date entering
+   the model now goes through `Date.wholeSecond`. Encoding fractions would also have worked,
+   but whole seconds keep `passage.json` readable, which is the entire reason for storing it
+   in the open.
+2. **Probes need an explicit entry point.** Top-level code is only allowed in a file named
+   `main.swift`, so `probe.sh` compiles with `-parse-as-library` and each probe uses `@main`.
+   Two async details also bite: `FileManager.enumerator`'s iterator is unavailable from an
+   async context, and an actor's methods need `await` even for pure path math.
+3. **The second-instance path needed to actually quit.** The lock correctly refused the
+   second instance, but the app then sat there with an error alert and a dead window.
+   It now says why and quits, which is what the plan asked for.
+4. **Screen recording and assistive access are both denied to the terminal**, so the three
+   UI gates above cannot be machine-verified from here. That is a real limit on what
+   "verified" can mean for the view layer, and it is why those gates are marked blocked
+   rather than assumed.
+
+## What the probe showed
+
+```
+folder: 2026-09-14-interview-prep-the-fog-came-in-9946cd21
+sentences: 3, paragraphs: 2
+  [0] p0: The fog came in on little cat feet.
+  [1] p0: It sat looking over harbor and city.
+  [2] p1: Then, at 4 p.m., it moved on.
+takes: 2, missing audio: 0
+
+  passage.json  (1426 bytes)
+  takes/2026-09-15T045818Z-6fdea9.json  (351 bytes)
+  takes/2026-09-15T045818Z-6fdea9.m4a
+  takes/2026-09-15T045918Z-740434.json  (351 bytes)
+  takes/2026-09-15T045918Z-740434.m4a
+```
+
+One 351-byte file per take, paired with its audio and sharing a stem. Appending rewrites
+nothing.
