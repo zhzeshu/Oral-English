@@ -21,8 +21,10 @@ shift
 SRC="Sources/Tools/$NAME.swift"
 [ -f "$SRC" ] || { echo "No such probe: $SRC" >&2; exit 1; }
 
+# Core plus Services. Not App or Views: those carry the app's own @main and its SwiftUI
+# scene, which would collide with the probe's entry point.
 CORE=()
-while IFS= read -r -d '' f; do CORE+=("$f"); done < <(find Sources/Core -name '*.swift' -print0)
+while IFS= read -r -d '' f; do CORE+=("$f"); done < <(find Sources/Core Sources/Services -name '*.swift' -print0)
 
 mkdir -p build
 # -parse-as-library, so each probe uses an explicit @main entry point. Top-level code is

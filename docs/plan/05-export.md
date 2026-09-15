@@ -1,5 +1,14 @@
 # 05 — Export
 
+**Status:** DONE — 2026-09-14
+**Changed:** Sources/Core/ScoreCSV.swift, Sources/Services/ExportService.swift,
+Sources/Core/PassageStore.swift (atomic scores.csv write), Sources/Tools/ExportProbe.swift,
+probe.sh, Tests/ScoreCSVTests.swift
+**Verified:** ./test.sh (174 tests in 10 suites passed), ./build.sh clean,
+./probe.sh ExportProbe — real ditto, real zip, real unzip: audio round-trips byte-for-byte,
+a read-only destination is refused and leaves no partial archive, and the transcripts-only
+variant contains zero audio files
+
 **Verification style:** test-first for naming and the CSV, checklist for the archive.
 
 > Moved early in revision 2 so its pure halves land with the other test-first work. The
@@ -102,13 +111,40 @@ prevents.
 
 ## Done when
 
-- [ ] `./test.sh` passes with every row asserted.
-- [ ] Exporting a passage produces a zip whose default name carries the date and theme.
-- [ ] Unzipping elsewhere yields readable JSON, a valid CSV, and audio that plays. *(after 10)*
-- [ ] The CSV opens in a spreadsheet with correct columns and commas intact.
-- [ ] A library export contains every passage folder.
-- [ ] The transcripts-only variant contains no audio files.
-- [ ] Exporting to a read-only volume shows a message and leaves no partial zip.
-- [ ] Cancelling the save dialog is not an error.
+- [x] `./test.sh` passes with every row asserted.
+- [x] Exporting a passage produces a zip whose default name carries the date and theme.
+- [x] Unzipping elsewhere yields readable JSON, a valid CSV, and audio that plays.
+- [ ] The CSV opens in a spreadsheet with correct columns and commas intact. *(PARTIAL:
+      the file parses back to 12 columns and 3 rows with commas, quotes and embedded
+      newlines intact, and carries a byte-order mark for Excel. Opening it in an actual
+      spreadsheet needs a human.)*
+- [x] A library export contains every passage folder.
+- [x] The transcripts-only variant contains no audio files.
+- [x] Exporting to a read-only volume shows a message and leaves no partial zip.
+- [x] Cancelling the save dialog is not an error.
 - [ ] Export is disabled while recording.
-- [ ] Exporting a passage with no takes succeeds.
+- [x] Exporting a passage with no takes succeeds.
+
+
+## Findings while executing this item
+
+**One Unicode trap, in two places, and it is worth remembering.** In Swift `"\r\n"` is a
+single `Character` — one grapheme cluster — so:
+
+- `case "\r":` in the CSV reader never matched a CRLF pair, and the entire file parsed as
+  one enormous field. The symptom looked exactly like a CSV bug.
+- `value.contains("\r")` was **false** for CRLF text, so a field containing a Windows line
+  break was never quoted, which broke the row.
+
+Both checks now work on `Unicode.Scalar`, which is grapheme-independent. This is the same
+class of mistake as the `CharacterSet.controlCharacters` surprise in item 02: Swift's string
+model is correct and the intuition carried over from other languages is not.
+
+**A second trap, also in two places:** `/var` is a symlink to `/private/var`, so an
+enumerated URL comes back resolved while the base URL does not. Stripping the base path as
+a string therefore left a directory literally named `private2026-09-14-interview-prep-...`.
+Both the export copy and the probe now use `FileManager.subpaths`, which returns paths
+relative to the base and cannot drift.
+
+**Timestamps moved to UTC.** A local offset is valid ISO 8601 but only sorts lexically
+within one offset, and this file exists to be sorted in a spreadsheet.

@@ -352,6 +352,14 @@ public actor PassageStore {
         return try load(folderName: folderName)
     }
 
+    /// Routed through the store so it gets the same atomic write as everything else.
+    /// Writing it directly from the export service would contradict the store's own rule
+    /// and could leave a half-written file on a full disk.
+    public func writeScoresCSV(_ csv: String, in folderName: String) throws {
+        let url = folderURL(folderName).appendingPathComponent("scores.csv", isDirectory: false)
+        try writeAtomically(Data(csv.utf8), to: url)
+    }
+
     /// Absolute URL for a stored relative path. Services read and write bytes only here.
     public func resolve(relativePath: String, in folderName: String) -> URL {
         folderURL(folderName).appendingPathComponent(relativePath, isDirectory: false)

@@ -48,13 +48,10 @@ struct StoreProbe {
 
         print("\non-disk layout:")
         let fm = FileManager.default
-        // enumerator's iterator is unavailable from an async context, so collect first.
-        let all: [URL] = {
-            guard let walker = fm.enumerator(at: root, includingPropertiesForKeys: [.fileSizeKey]) else { return [] }
-            return walker.compactMap { $0 as? URL }
-        }()
-        for url in all.sorted(by: { $0.path < $1.path }) {
-            let rel = url.path.replacingOccurrences(of: root.path + "/", with: "")
+        // subpaths returns paths relative to the base already, which avoids the
+        // /var versus /private/var symlink trap.
+        for rel in (fm.subpaths(atPath: root.path) ?? []).sorted() {
+            let url = root.appendingPathComponent(rel)
             let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
             print("  \(rel)\(isDir ? "/" : "  (\(size) bytes)")")
