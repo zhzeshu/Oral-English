@@ -21,19 +21,40 @@ import Foundation
 struct RecordProbe {
     @MainActor
     static func main() async throws {
-        let permissions = PermissionService()
-        permissions.refresh()
-        print("microphone: \(permissions.microphone.rawValue)")
-
-        if permissions.microphone != .granted {
-            print("requesting the microphone. A dialog should appear.")
-            let matrix = await permissions.requestForRecording()
-            guard matrix.canRecord else {
+        // Deliberately does NOT construct PermissionService, because that reads the
+        // speech-recognition status — and merely *reading* it is privacy-gated. In direct
+        // mode the terminal is the responsible process and has no
+        // NSSpeechRecognitionUsageDescription, so the read kills the process. Recording
+        // needs only the microphone, so only the microphone is touched here.
+        let micStatus = AVAudioApplication.shared.recordPermission
+        print("microphone: \(micStatus == .granted ? "granted" : micStatus == .denied ? "denied" : "notDetermined")")
+        if micStatus != .granted {
+            print("requesting the microphone. A dialog may appear.")
+            let granted = await AVAudioApplication.requestRecordPermission()
+            guard granted else {
                 print("\nDENIED. Nothing further can be checked.")
                 print("Grant it in System Settings, Privacy and Security, Microphone.")
                 return
             }
         }
+
+        // Spoken prompts, because a terminal command cannot ask someone to speak on cue:
+        // stdout does not reach them until the process exits.
+        let provider = AppleVoiceProvider()
+        let voices = await provider.availableVoices()
+        let voice = VoiceRanking.best(voices)
+        if let voice { print("prompting with \(voice.name) [\(voice.tier.label)]") }
+        func say(_ text: String) async {
+            guard let voice else { return }
+            try? await provider.speak(text, voice: voice, rate: 0.45) { _, _ in }
+        }
+
+        let promptSentence = ProcessInfo.processInfo.environment["ORAL_SENTENCE"]
+            ?? "The fog came in on little cat feet."
+        await say("Listen, then read the sentence back after the countdown.")
+        await say(promptSentence)
+        await say("Now read it. Three. Two. One.")
+        try? await Task.sleep(for: PracticeController.postSynthesisSettle)
 
         // An explicit path keeps the recording, so it can be played back and handed to
         // TranscribeProbe. Without one the file is temporary.
@@ -47,7 +68,7 @@ struct RecordProbe {
         defer { if !keep { try? FileManager.default.removeItem(at: url) } }
 
         let recorder = AudioRecorderService()
-        print("\nrecording \(Int(seconds)) seconds. SPEAK NOW -- read a sentence aloud.")
+        print("\nrecording \(Int(seconds)) seconds. SPEAK NOW.")
         do {
             try recorder.start(to: url)
         } catch let f as AppFailure {
@@ -71,6 +92,7 @@ struct RecordProbe {
             print("\nstop produced no file at all.")
             return
         }
+        await say("Thank you.")
 
         let size = (try? result.url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         let stopElapsed = Date().timeIntervalSince(stopStart)

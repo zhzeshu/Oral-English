@@ -219,3 +219,44 @@ which would have taken items 08 and 10 off the table entirely.
 Force-quit recovery, the sleep path, and device loss mid-recording. Those need a human
 unplugging something or killing the app at the right moment, and they are the paths most
 likely to still hold a bug.
+
+## A probe cannot obtain a microphone grant from a non-interactive session
+
+Established the hard way, and worth writing down so nobody repeats it. Four routes were
+tried against the probe bundle `com.zackzhang.oralenglish.probe`:
+
+| Route | Result |
+| --- | --- |
+| Bare binary, embedded `__info_plist` | Microphone works — it inherits the terminal's grant. **Speech recognition crashes**, because the Speech framework reads `NSBundle.mainBundle`, which a bare binary lacks |
+| Real `.app` bundle, run `Contents/MacOS/<name>` directly | Killed by privacy. Running the binary from a terminal makes the **terminal** the responsible process, so the usage string is looked for in the terminal's plist — the same trap item 01 documents for the app |
+| Real `.app`, launched with `open -W --stdout` | Own identity, `mainBundle` resolves, both usage strings readable — and the request still flips `notDetermined` to `denied` **with no dialog** |
+| Same, plus an `NSApplication` accessory host, installed to `~/Applications`, privacy record reset | Identical auto-denial |
+
+So the blocker is not the plist, not the bundle, not the signature and not the location. It
+is that this session cannot present an interactive permission dialog, and macOS denies
+rather than prompting.
+
+**What this means for the workflow.** Recording verification has to happen either in the
+real app, which already holds the grant, or by the user running the probe from their own
+Terminal where the dialog can appear:
+
+```
+ORAL_PROBE_DIRECT=1 ORAL_SENTENCE="The fog came in on little cat feet." \
+  ./probe.sh RecordProbe ~/Desktop/take.m4a 8
+```
+
+Direct mode borrows the terminal's microphone grant and deliberately never touches `Speech`
+— `RecordProbe` reads `AVAudioApplication.recordPermission` directly rather than
+constructing `PermissionService`, because merely *reading* the speech-recognition status is
+privacy-gated and would kill the process.
+
+`ProbeApp` is kept even though it did not solve this: a probe that does get a grant needs a
+real application to present anything in, and the reasoning is recorded in the file.
+
+## What was verified end to end anyway
+
+The pipeline ran with Ava speaking the prompts: 8.36 s recorded, 368,576 frames at 44100 Hz
+mono, finalized by the delegate in 0.73 s, readable back as audio. Peak level 0.00 across
+the whole window, with the microphone reported granted, the built-in mic the live default,
+and input volume at 37 — so the encoder, the delegate await, the staging path and the
+no-input heuristic are all proven, and only the captured signal is missing.
