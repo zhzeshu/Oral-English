@@ -1,6 +1,7 @@
 # Handoff
 
-Written 2026-09-15, so this session's context can be discarded without losing anything.
+Written 2026-09-15; the transcription and permissions sections were revised later the
+same day. So this session's context can be discarded without losing anything.
 Everything here is either verified or explicitly marked unverified.
 
 **Read order for a fresh session:** this file, then `docs/plan/00-overview.md`, then the
@@ -19,15 +20,16 @@ Built without Xcode, with Command Line Tools only.
 
 | | |
 | --- | --- |
-| Commits | 14, all on the default branch |
+| Commits | 16. The first 14 are on the default branch; the Speech API migration and the icon are on `speech-api-migration` |
 | Swift sources | 53 files, about 9,700 lines |
-| Tests | **252 passing in 20 suites**, about half a second |
+| Tests | **261 passing in 21 suites**, about half a second |
 | Build | Clean, signed with `Authority=Oral English Dev`, installed to `~/Applications/Oral English.app` |
-| Probes | 11 under `Sources/Tools` |
-| Plan items | 6 done, 4 partial, 1 blocked, out of 13 |
+| Probes | 13 under `Sources/Tools` (AssetProbe and ModernTranscribeProbe added 2026-09-15) |
+| Icon | `Resources/AppIcon.icns`, drawn in CoreGraphics. `./make-icon.sh` regenerates it from `Sources/Icon/MakeIcon.swift` |
+| Plan items | 6 done, 4 partial, 1 blocked, out of 13. Item 06's DONE stamp was corrected to PARTIAL on 2026-09-15 |
 
 ```bash
-./test.sh        # 252 tests, no permissions needed, the loop to live in
+./test.sh        # 261 tests, no permissions needed, the loop to live in
 ./build.sh       # compile, sign, install
 ./run.sh         # build then open
 ./probe.sh       # lists the probes
@@ -36,48 +38,83 @@ Built without Xcode, with Command Line Tools only.
 A git pre-commit hook runs `./test.sh` and blocks the commit on failure. There is no CI;
 that hook is the whole regression story.
 
-## The three things that actually block progress
+## Status of the three former blockers — all resolved or answered 2026-09-15
 
-Everything else is done or is a partial with its remaining gates listed in its own plan
-item. These three are the real queue, in order.
+The three items that used to head this file are done. Read
+`docs/plan/10-transcription.md` for the full account; the short version:
 
-### 1. Is per-word recognizer confidence non-zero on this machine?
+### 1. Is per-word confidence non-zero? YES — and it correlates with correctness
 
-**This is the highest-value unknown.** The scorer's hard-to-hear rule turns on mean
-confidence, and `SFTranscriptionSegment.confidence` is commonly reported as `0.0` for
-on-device results. If it is uniformly zero here, every take trips hard-to-hear and the app
-never shows a score again. Item 03 already specifies the fallback: derive the signal from
-recorder metering plus the missed-word ratio.
+Settled. mean **0.7776**, 8 distinct values, min 0.194, max 0.986. **Item 03's
+hard-to-hear rule stands as designed; the metering fallback is not needed.**
 
-Settle it by recording yourself and transcribing:
+On the one take measured, both misrecognised words scored below 0.45 while every correct
+word exceeded 0.94. Promising, but n=1 — treat it as a hypothesis for the item 11 corpus to
+test, not a design input.
 
-```bash
-ORAL_PROBE_DIRECT=1 ORAL_SENTENCE="The fog came in on little cat feet." \
-  ./probe.sh RecordProbe ~/Desktop/take.m4a 8
+Two conditions: it needs `attributeOptions: [.transcriptionConfidence]` (without it no
+confidence is reported at all), and it needs the **modern** Speech API.
 
-./probe.sh TranscribeProbe ~/Desktop/take.m4a "The fog came in on little cat feet."
+### 2. Recording works, and real speech has been captured
+
+`~/Desktop/take.m4a` — 8.40s of "The fog came in on little cat feet." Verified independently
+of the level meter by decoding to PCM: 370,624 frames at 44100 Hz, RMS −21.4 dBFS, speech in
+seconds 0–4. The old peak-0.00 runs were nobody speaking, not a silent stream.
+
+**It clips at 0 dBFS.** Trim input gain before recording item 11's fifty takes; a clipped
+corpus would tune the scorer against distortion.
+
+### 3. Item 11 still needs ~50 labelled takes
+
+Unchanged in substance, but it is now an hour of reading rather than a design problem — with
+one new prerequisite: **decide the transcription API first** (below). Fixtures store
+transcripts with confidences, so they are only reusable if produced by the API that ships.
+The audio would stay valid; the transcripts would not.
+
+## Migration done 2026-09-15: transcription runs on the modern Speech API
+
+`TranscriberService` was rewritten on `SpeechAnalyzer`/`SpeechTranscriber`. The deployment
+target is now **macOS 26.0** (`build.sh`, `test.sh`, `probe.sh`) and **no legacy fallback
+was kept** — legacy `SFSpeechRecognizer` on-device returns an empty transcript with no error
+on this OS, so a fallback would be untested code that is known-broken where it would run.
+
+The public API did not change, so no caller moved. Full pipeline verified end to end:
+
+```
+mean confidence 0.677    timings monotonic: yes
+scored: accuracy 69 percent, verdict clear
+  6 matched, 0 close, 1 wrong, 1 missed, 1 extra
+  words to work on: The, fog
 ```
 
-The first speaks the prompt through Ava, counts down, records, and prints a live level bar.
-The second reports the confidence distribution and says plainly which case you are in.
+Those two flagged words are the two lowest-confidence words, and the verdict is `clear`
+rather than `hardToHear` — item 03's rule behaving correctly on real speech.
 
-### 2. Nothing has been recorded or transcribed yet
+**A 92-second file transcribes in one pass**, 87 words, complete coverage, monotonic
+timings, 0.52s. So `ChunkPlan` is no longer needed for file transcription. It is
+deliberately **not deleted** — its 13 tests are the only coverage of monotonic timings
+across boundaries, and streaming recognition is not built yet.
 
-Item 08's encoder path, delegate await and staging are proven — 368,576 frames at 44100 Hz
-mono, finalized cleanly. But **no audio has ever been captured**: every run measured peak
-level 0.00. Ruled out: permission granted, built-in mic is the live default, input volume
-37, not muted. So it is either that nobody spoke during the window, or the terminal's grant
-yields a silent stream.
+**Two bugs the migration exposed, both fixed.** `offlineModelAvailable` came from
+`supportsOnDeviceRecognition`, which reported `true` with no model installed, so the app
+would have promised scoring and failed at score time; it now reads `AssetInventory.status`
+via `PermissionService.refreshModelAvailability()`. And the missing-model banner offered
+"Open settings" pointing at a privacy pane that cannot fix a missing model; it is now
+"Download model" and calls `AppModel.installSpeechModel()`.
 
-Item 10 has transcribed nothing at all, so the format conversion, the chunking on real
-audio, and the error mapping are all unexercised.
+## What is actually left
 
-### 3. Item 11 calibration needs about fifty labelled takes
-
-The harness, fixture format, category counts, tuning and held-out split, and the acceptance
-metric are all committed in `Tests/Fixtures/README.md`. The scorer currently runs on
-defaults tuned against synthetic cases only. `CalibrationTests` prints
-`CALIBRATION NOT RUN` rather than passing quietly.
+1. **Item 11's corpus** — ~50 labelled takes, about an hour of reading. Trim input gain
+   first; the one take so far clips at 0 dBFS. This is now the critical path.
+2. **In-app gates for items 06, 08 and 10** — one record tap in the real app, the transcript
+   showing in the expanded row, the no-speech message, and the three interruption paths
+   (device unplug, force quit, sleep). All need a human using the app.
+3. **Recognition accuracy is not good yet.** "The fog came in on little cat feet." came back
+   as "Oh, came in on a little cat feet." — two errors, so item 10's within-one-word gate is
+   still PARTIAL. The take clips, which is a plausible cause. Re-test on a clean recording
+   before concluding anything about the recognizer.
+4. **The third requirement the user never finished stating.** Still unresolved, still the
+   only non-technical item. Ask.
 
 ## Environment facts, all verified on this machine
 
@@ -87,9 +124,10 @@ Do not re-derive these. Re-check only if the toolchain changes.
 | --- | --- |
 | Xcode | Not installed. Command Line Tools only, SDK 26.5 |
 | Swift | 6.3.3. Strict concurrency (`-swift-version 6`) is on |
+| Deployment target | **macOS 26.0** since 2026-09-15, raised from 14.0 for `SpeechTranscriber`. A side effect worth knowing: no `if #available` guards are needed for the macOS 26 Speech API anywhere |
 | **XCTest** | **Unavailable.** Ships with Xcode |
 | **swift-testing** | **Available**, and in use. `swift test` fails because SwiftPM looks for Xcode's Platforms directory; driving `swiftc` with `-F`, `-plugin-path` and two `-rpath` flags works. `test.sh` does this and guards the three paths |
-| On-device recognition | **en-US only.** `en-GB`, `en-AU`, `zh-CN` all report available with no on-device model, which is why the locale is pinned |
+| On-device recognition | **en-US only** for locale purposes, which is why the locale is pinned. But **do not read `supportsOnDeviceRecognition` as "recognition will work"** — it reports capability, not model installation, and legacy `SFSpeechRecognizer` on-device is non-functional on macOS 26.6.1 regardless. Check `AssetInventory.status(forModules:)`, the only trustworthy signal, and use the modern `SpeechAnalyzer`/`SpeechTranscriber` API to actually transcribe |
 | Voices | 42 English. **Ava (Premium) installed**, `com.apple.voice.premium.en-US.Ava`. The other 41 are lowest tier |
 | Audio formats | Synthesis 22050 Hz mono non-interleaved; recording 44100 Hz mono. They differ, which is why the transcriber converts |
 | `AVAudioSession` | Unavailable on macOS. Route-change events must come from Core Audio or `AVCaptureDevice` instead — its absence is not the absence of the problem |
@@ -137,6 +175,39 @@ they are the things a fresh session would otherwise rediscover.
 12. **`grep -q` under `set -o pipefail` inverts an assertion.** grep exits on match,
     codesign takes SIGPIPE, and the pipeline reports failure on the success path. Capture
     output, then match. (Item 01)
+
+13. **`@MainActor` on a type propagates to its `static` members.** A `static map()` on a
+    `@MainActor` class was main-actor isolated, so calling it from `SFSpeechRecognizer`'s
+    authorization callback — which arrives on TCC's XPC queue — tripped Swift 6's executor
+    check and killed the process with `SIGTRAP`. Both `map` overloads are now `nonisolated`.
+    The symptom was a permission that appeared permanently denied: the process died before
+    any status could be stored, so TCC recorded nothing and the status stayed
+    `notDetermined` rather than `denied`. **That distinction is the tell** — a real refusal
+    persists. `tccutil reset` had nothing to reset. (Item 06)
+14. **`supportsOnDeviceRecognition` reports capability, not installation**, and
+    `SpeechTranscriber.installedLocales` can claim a locale is installed while
+    `AssetInventory.status(forModules:)` says only `.supported` — including for a base
+    module configuration with no attribute options. `AssetInventory.status` is the only
+    trustworthy signal. Recognition returning nothing with every legacy flag true is what a
+    missing model looks like. (Item 10)
+15. **Check `~/Library/Logs/DiagnosticReports/` before believing a privacy denial.** The
+    crash in trap 13 had been writing `.ips` reports for twelve hours while the failure was
+    being read as a refused grant. A probe that prints "DENIED" and a probe that died are
+    indistinguishable from stdout.
+16. **A probe reporting on its own input is not evidence.** The recorder's level meter was
+    believed to be lying for a day. Decoding the file to PCM and measuring RMS directly
+    confirmed the meter had been telling the truth all along. Verify a measurement with an
+    independent tool before redesigning around it. (Item 08)
+
+17. **The deployment target lives in two places.** Raising it in `build.sh`, `test.sh` and
+    `probe.sh` does not touch `LSMinimumSystemVersion` in `Resources/Info.plist`. After the
+    macOS 26 migration the plist still said `14.0`, so the app advertised that it ran where
+    `SpeechTranscriber` does not exist. Change both, or ship a launch-then-crash. (Items 01
+    and 10)
+18. **`iconutil -c icns` can exit 0 having dropped sizes.** The only honest check is to
+    convert the result back to an iconset and count the PNGs, which `make-icon.sh` does.
+    Relatedly, an `.icns` in `Resources/` does nothing without `CFBundleIconFile` in the
+    plist — the file is copied and silently ignored. (Item 01)
 
 ## Architecture, in one screen
 

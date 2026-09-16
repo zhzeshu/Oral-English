@@ -2,3 +2,8 @@ build/
 .DS_Store
 *.swiftmodule
 .signing-identity
+
+# Icon intermediates. `./make-icon.sh` regenerates the iconset from
+# Sources/Icon/MakeIcon.swift; only the packed .icns is committed, because build.sh
+# consumes that and nothing reads the loose PNGs.
+Resources/AppIcon.iconset/
