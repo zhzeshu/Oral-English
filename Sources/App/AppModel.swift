@@ -32,6 +32,8 @@ public final class AppModel {
     public var errorMessage: String?
     public var isAnotherInstanceRunning = false
     public var libraryIsSynced = false
+    /// True while the speech model download is running, so the banner can say so.
+    public private(set) var isInstallingSpeechModel = false
 
     /// Derived per-row data, recomputed once per passage mutation.
     ///
@@ -73,6 +75,7 @@ public final class AppModel {
             try await store.ensureLibrary()
             // Status only, no prompt. Nothing asks for a permission at launch.
             permissions.refresh()
+            await permissions.refreshModelAvailability()
             await voiceCatalog.refresh()
             voiceNeedsAttention = voiceCatalog.needsBetterVoice
             libraryIsSynced = await store.isInUbiquitousContainer()
@@ -428,10 +431,39 @@ public final class AppModel {
         return matrix
     }
 
+    /// Downloads the on-device speech model.
+    ///
+    /// This exists because a missing model is not a permission problem, and the banner used
+    /// to send the user to the Speech Recognition privacy pane, where there is nothing to
+    /// fix. The model is a few hundred megabytes, so the download is explicit and never
+    /// implicit in a scoring call.
+    public func installSpeechModel() async {
+        guard !isInstallingSpeechModel else { return }
+        isInstallingSpeechModel = true
+        defer { isInstallingSpeechModel = false }
+        do {
+            try await TranscriberService().installModel()
+            await permissions.refreshModelAvailability()
+            refreshBanner()
+        } catch {
+            errorMessage = (error as? AppFailure)?.userMessage
+                ?? AppFailure.offlineModelUnavailable(locale: "en-US").userMessage
+        }
+    }
+
     /// Re-read on wake: privacy state can change while the machine is asleep.
+    ///
+    /// The model check is async, so it runs in a follow-up task rather than blocking the
+    /// wake path. A model can be removed or a download can finish while asleep, so it does
+    /// need re-reading and not just the permission statuses.
     public func permissionsMayHaveChanged() {
         permissions.refresh()
         refreshBanner()
+        Task { [weak self] in
+            guard let self else { return }
+            await permissions.refreshModelAvailability()
+            refreshBanner()
+        }
     }
 
     // MARK: - Library

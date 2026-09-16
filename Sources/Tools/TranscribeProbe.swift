@@ -19,7 +19,21 @@ import Speech
 @main
 struct TranscribeProbe {
     @MainActor
-    static func main() async throws {
+    static func main() {
+        // Inside a real NSApplication, so a privacy prompt has somewhere to appear.
+        // A host alone is not sufficient -- item 08 established that a probe cannot get a
+        // microphone grant by any route, host included -- but the recognition request below
+        // still needs a UI context to be presented in.
+        ProbeApp.run { await body() }
+    }
+
+    @MainActor
+    static func body() async {
+        do { try await transcribe() } catch { print("failed: \(error)") }
+    }
+
+    @MainActor
+    static func transcribe() async throws {
         guard let path = CommandLine.arguments.dropFirst().first else {
             print("Usage: ./probe.sh TranscribeProbe <audio-file> [reference text]")
             return
@@ -32,15 +46,25 @@ struct TranscribeProbe {
 
         let permissions = PermissionService()
         permissions.refresh()
+        await permissions.refreshModelAvailability()
         print("speech recognition: \(permissions.recognition.rawValue)")
-        print("offline en-US model: \(permissions.offlineModelAvailable ? "available" : "NOT available")")
+        print("offline en-US model: "
+              + "\(permissions.offlineModelAvailable ? "INSTALLED" : "NOT installed")")
 
         if permissions.recognition != .granted {
             print("\nrequesting recognition. A dialog should appear.")
-            _ = await permissions.requestForRecording()
+            // Recognition only -- deliberately NOT requestForRecording().
+            //
+            // This probe transcribes a file on disk and never opens the microphone. But
+            // requestForRecording() asks for the microphone first and gates the recognition
+            // request behind `microphone.isGranted`, and a probe cannot obtain a microphone
+            // grant at all (item 08, four routes tried). So that path reported DENIED for a
+            // permission this probe does not use, and never reached Speech -- which is why
+            // the status stayed notDetermined instead of becoming denied.
+            let state = await PermissionService.requestRecognition()
             permissions.refresh()
-            guard permissions.recognition == .granted else {
-                print("DENIED. Nothing further can be checked.")
+            guard state == .granted || permissions.recognition == .granted else {
+                print("DENIED (recognition: \(state.rawValue)). Nothing further can be checked.")
                 return
             }
         }
@@ -83,7 +107,18 @@ struct TranscribeProbe {
         let varying = Set(confidences).count > 1
         print("\nconfidence: mean \(String(format: "%.3f", transcript.meanConfidence)), "
               + "distinct values \(Set(confidences).count)")
-        if allZero {
+        if transcript.words.isEmpty || transcript.text.trimmingCharacters(
+            in: .whitespacesAndNewlines).isEmpty {
+            // Do NOT report this as a confidence finding. An empty transcript has no
+            // words, so mean confidence is 0 by arithmetic, not because the recognizer
+            // reported zero for words it found. Conflating the two sent an earlier session
+            // toward rewriting item 03's hard-to-hear rule for no reason.
+            print("  EMPTY TRANSCRIPT -- this says NOTHING about confidence.")
+            print("  Legacy SFSpeechRecognizer on-device returns an instant empty final")
+            print("  result on macOS 26.6.1 even with the asset installed and clear audio.")
+            print("  Verified: ModernTranscribeProbe transcribes the same file correctly.")
+            print("  Use ./probe.sh ModernTranscribeProbe instead.")
+        } else if allZero {
             print("  ALL ZERO. Item 03's hard-to-hear rule cannot use this signal.")
             print("  Switch to the fallback: recorder metering plus the missed-word ratio.")
         } else if varying {

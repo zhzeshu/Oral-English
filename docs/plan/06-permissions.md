@@ -1,12 +1,18 @@
 # 06 — Permissions
 
-**Status:** DONE — 2026-09-14 (five gates BLOCKED on the user, see below)
+**Status:** PARTIAL — corrected 2026-09-15. Was stamped DONE on 2026-09-14; that stamp
+was **wrong**. The recognition request path crashed every time it ran, so the five gates
+recorded as "BLOCKED on the user" were not blocked on the user at all — see
+**The crash this stamp was hiding** below. The crash is now fixed and the recognition
+grant is verified end to end; the remaining gates genuinely do need a human.
 **Changed:** Sources/Core/PermissionMatrix.swift, Sources/Core/BannerKind.swift,
 Sources/Services/PermissionService.swift, Sources/App/AppModel.swift,
 Sources/Views/RootView.swift, Sources/Tools/PermissionProbe.swift,
 Tests/PermissionMatrixTests.swift
-**Verified:** ./test.sh (185 tests in 11 suites passed, including all 75 combinations of the
-matrix), ./build.sh clean, ./probe.sh PermissionProbe
+**Verified:** ./test.sh (261 tests in 21 suites passed as of 2026-09-15, including all 75
+combinations of the matrix), ./build.sh clean, ./probe.sh PermissionProbe, and — new on
+2026-09-15 — a real speech-recognition grant obtained through
+`PermissionService.requestRecognition()` and persisted (`speech recognition: granted`).
 **Blocked gates:** granting and denying permissions needs a human clicking in System
 Settings. The decision logic is fully tested; the dialogs are not.
 
@@ -88,8 +94,10 @@ inline with a re-record button.
 ## Done when
 
 - [x] `./test.sh` passes, including every matrix combination.
-- [ ] *(BLOCKED on the user)* First record tap prompts for the microphone, then recognition, with the Info.plist
-      usage strings.
+- [~] *(PARTIAL, 2026-09-15)* The **recognition** prompt is verified: it appeared, was
+      granted, and the grant persisted. The microphone half is still unverified in the app,
+      and a probe cannot stand in for it (item 08 established that a probe cannot obtain a
+      microphone grant by any route). Needs one record tap in the real app.
 - [ ] *(BLOCKED on the user)* Denying the microphone and relaunching shows the banner and a disabled record control,
       and reference playback still works.
 - [ ] *(BLOCKED on the user)* Denying only recognition leaves recording and A/B fully working.
@@ -127,3 +135,51 @@ picker** — it spews into the system log for every one that lacks an asset.
 
 Nothing prompts at launch: the probe reads `notDetermined` for both permissions without
 producing a dialog, which is the behavior `refresh()` is designed for.
+
+## The crash this stamp was hiding
+
+Found 2026-09-15, while trying to answer item 10's confidence question.
+
+`PermissionService.requestRecognition()` died with `SIGTRAP` on **every** invocation,
+inside TCC's XPC reply callback:
+
+```
+dispatch_assert_queue_fail
+  _swift_task_checkIsolatedSwift
+  closure #1 in closure #1 in static PermissionService.requestRecognition()
+  thunk for @escaping (SFSpeechRecognizerAuthorizationStatus) -> ()
+  TCC __TCCAccessRequest_block_invoke
+```
+
+The class is `@MainActor`, and **that propagates to its `static` members**, so
+`Self.map(status)` was main-actor isolated. `SFSpeechRecognizer.requestAuthorization`
+delivers its completion on TCC's own queue, so Swift 6's executor check fired and trapped.
+The closure's own comment shows the author knew the callback was off-main and mapped inside
+it deliberately — the trap is that the type-level `@MainActor` silently captured the
+statics too.
+
+Fix: `nonisolated` on both `map` overloads. They are pure switches over enum cases, so they
+are safe on any executor. One line each.
+
+**Why this mattered more than a probe bug.** The real app calls the same method on the first
+record tap, so it would have crashed there identically. This was an app defect wearing a
+permissions costume.
+
+**Why it looked like a denial.** The process died before any status could be stored, so TCC
+recorded nothing and the status stayed `notDetermined` rather than becoming `denied`. Every
+retry produced the same "DENIED" line, and `tccutil reset` had nothing to reset. The
+distinction between `notDetermined` and `denied` after a request is the tell: a real refusal
+persists, and this did not.
+
+**Why the suite could not catch it.** `PermissionService.swift` imports `Speech`, so it
+cannot be in the pure test target that `test.sh` compiles. 261 passing tests cannot see this
+file. The crash reports had been sitting in `~/Library/Logs/DiagnosticReports/` since 09:27
+that morning, unread — worth checking there before concluding that a privacy prompt was
+refused.
+
+**A second, smaller defect, same session.** `TranscribeProbe` called
+`requestForRecording()`, which requests the microphone first and gates the recognition
+request behind `microphone.isGranted`. But that probe transcribes a file from disk and never
+opens the microphone, so it was blocking on a permission it does not use — and a probe
+cannot get that permission at all. It now calls
+`PermissionService.requestRecognition()` directly.

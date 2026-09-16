@@ -66,7 +66,7 @@ cp Resources/ProbeInfo.plist "$APP/Contents/Info.plist"
 # supported way to give a command-line tool one. The probe is then ad-hoc signed so it has
 # a code identity for the grant to attach to.
 swiftc -Onone -parse-as-library \
-    -target arm64-apple-macos14.0 -sdk "$(xcrun --show-sdk-path)" \
+    -target arm64-apple-macos26.0 -sdk "$(xcrun --show-sdk-path)" \
     -swift-version 6 \
     -framework AVFoundation -framework Speech -framework AppKit \
     -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist \

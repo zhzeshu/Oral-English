@@ -33,10 +33,24 @@ public final class PermissionService {
     }
 
     /// Reads current status without touching hardware, so it is safe at launch and on wake.
+    ///
+    /// Does **not** update `offlineModelAvailable`: the only trustworthy check for that is
+    /// `AssetInventory.status`, which is async. Call `refreshModelAvailability()` alongside
+    /// this wherever an async context is available.
     public func refresh() {
         microphone = Self.map(AVAudioApplication.shared.recordPermission)
         recognition = Self.map(SFSpeechRecognizer.authorizationStatus())
-        offlineModelAvailable = Self.onDeviceRecognitionAvailable()
+    }
+
+    /// Whether the on-device model is actually installed.
+    ///
+    /// Separate from `refresh()` because it must be async, and worth the split: this value
+    /// drives `canScore` and the missing-model banner, and the signal it used to come from
+    /// —`SFSpeechRecognizer.supportsOnDeviceRecognition`— was measured returning `true` on
+    /// 2026-09-15 while no model was installed and nothing could transcribe. The app would
+    /// have promised scoring and then failed at score time.
+    public func refreshModelAvailability() async {
+        offlineModelAvailable = await TranscriberService.modelStatus() == .installed
     }
 
     /// Requests the microphone, then recognition, both at the moment the user asked for the
@@ -49,26 +63,38 @@ public final class PermissionService {
         if microphone.isGranted, recognition == .unknown || recognition == .notDetermined {
             recognition = await Self.requestRecognition()
         }
-        offlineModelAvailable = Self.onDeviceRecognitionAvailable()
+        await refreshModelAvailability()
         return matrix
     }
 
     static func requestRecognition() async -> PermissionState {
         await withCheckedContinuation { continuation in
-            // The callback arrives off the main thread, so map to a Sendable value inside
-            // it and let the continuation carry that across.
+            // The callback arrives off the main thread -- specifically on TCC's XPC reply
+            // queue -- so map to a Sendable value inside it and let the continuation carry
+            // that across.
+            //
+            // `map` MUST stay `nonisolated`. This class is `@MainActor`, and that
+            // propagates to its static members, so an isolated `map` made this closure
+            // assert its executor and the process died with SIGTRAP inside
+            // __TCCAccessRequest_block_invoke -- before any status could be stored. The
+            // crash is invisible to `test.sh`, because this file imports Speech and so
+            // cannot be in the pure test target.
             SFSpeechRecognizer.requestAuthorization { status in
                 continuation.resume(returning: map(status))
             }
         }
     }
 
+    /// Legacy capability flag. **Not** a statement that recognition will work.
+    ///
+    /// Kept only because the permission probe reports it for comparison. Do not gate
+    /// behaviour on it — see `refreshModelAvailability()`.
     static func onDeviceRecognitionAvailable() -> Bool {
         guard let recognizer = SFSpeechRecognizer(locale: locale) else { return false }
         return recognizer.supportsOnDeviceRecognition
     }
 
-    static func map(_ status: AVAudioApplication.recordPermission) -> PermissionState {
+    nonisolated static func map(_ status: AVAudioApplication.recordPermission) -> PermissionState {
         switch status {
         case .granted: return .granted
         case .denied: return .denied
@@ -77,7 +103,7 @@ public final class PermissionService {
         }
     }
 
-    static func map(_ status: SFSpeechRecognizerAuthorizationStatus) -> PermissionState {
+    nonisolated static func map(_ status: SFSpeechRecognizerAuthorizationStatus) -> PermissionState {
         switch status {
         case .authorized: return .granted
         case .denied: return .denied

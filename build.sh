@@ -24,7 +24,7 @@ EXEC_NAME="OralEnglish"
 BUNDLE_ID="com.zackzhang.oralenglish"
 DEPLOY="$HOME/Applications/$APP_NAME.app"
 STAGE="build/$APP_NAME.app"
-TARGET="arm64-apple-macos14.0"
+TARGET="arm64-apple-macos26.0"
 SDK="${ORAL_SDK:-$(xcrun --show-sdk-path)}"
 # Prefer the hash recorded by make-cert.sh: signing by hash cannot be ambiguous.
 if [ -z "${ORAL_SIGN_ID:-}" ] && [ -f .signing-identity ]; then

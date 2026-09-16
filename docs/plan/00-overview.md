@@ -70,6 +70,39 @@ All tested on this machine. Do not re-litigate, but re-check if the toolchain ch
 | Filesystem | Case-insensitive APFS. Path components cap at 255 characters; 256 fails |
 | `tccutil reset` | Errors with OSStatus −10814 when TCC holds no record for the bundle id. That is benign, not a failure |
 
+### Correction from 2026-09-15 — the recognition row above is misleading
+
+The "On-device recognition" row records `supportsOnDeviceRecognition` as true for en-US.
+That reading of the API is accurate and the conclusion drawn from it is not: **the flag
+reports capability, not that recognition will work.** With it true, the grant given, and
+clear audio, `SFSpeechRecognizer` on-device returned an empty transcript with no error.
+
+Measured on this machine (macOS 26.6.1, build 25G76):
+
+- **Legacy `SFSpeechRecognizer` on-device recognition does not work.** Empty final result,
+  zero segments, no error, ~0.2s, for both AAC `.m4a` and PCM WAV of identical audio.
+- **The modern API works** on the same file in the same session:
+  `SpeechAnalyzer` + `SpeechTranscriber` returns a transcript with per-word confidence.
+- **The en-US on-device model was not installed**, and no legacy signal said so.
+  `AssetInventory.status(forModules:)` is the only trustworthy check;
+  `supportsOnDeviceRecognition` and `SpeechTranscriber.installedLocales` both claimed en-US
+  was fine while nothing worked.
+- **Per-word confidence is non-zero and varying** through the modern API's
+  `.transcriptionConfidence` attribute — mean 0.7776, 8 distinct values. This settles the
+  open question item 03's hard-to-hear rule depended on, in its favour, so the metering
+  fallback is not needed.
+
+**Resolved the same day: item 10 was migrated.** `TranscriberService` now runs on
+`SpeechAnalyzer`/`SpeechTranscriber`, the **deployment target is macOS 26.0** (raised
+from 14.0 in all three build scripts), and no legacy fallback was kept. Confidence,
+per-word timing and scoring all work end to end, and a 92-second file transcribes in a
+single pass — so the manual chunking is no longer needed for file transcription, though
+`ChunkPlan` is retained. Full detail in `10-transcription.md`.
+
+Also corrected: item 06's `DONE` stamp was wrong. Its recognition request path crashed with
+`SIGTRAP` on every call, so the gates it recorded as "BLOCKED on the user" were blocked on a
+defect. Fixed; see `06-permissions.md`.
+
 ### Two corrections from revision 1
 
 Revision 1 claimed swift-testing was unavailable "ships with Xcode, not Command Line

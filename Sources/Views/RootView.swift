@@ -47,8 +47,12 @@ struct RootView: View {
         switch kind {
         case .micDenied:
             Workspace.openPrivacySettings(.microphone)
-        case .recognitionDenied, .offlineModelMissing:
+        case .recognitionDenied:
             Workspace.openPrivacySettings(.speechRecognition)
+        case .offlineModelMissing:
+            // Not a permission problem, so not a Privacy pane. The model has to be
+            // downloaded, and this is the only place the app offers to do it.
+            Task { await model.installSpeechModel() }
         case .voiceQuality:
             Workspace.openPrivacySettings(.spokenContent)
         case .librarySynced:

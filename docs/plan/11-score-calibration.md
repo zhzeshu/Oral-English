@@ -1,10 +1,17 @@
 # 11 — Score calibration
 
-**Status:** BLOCKED — 2026-09-14
-**Blocker:** calibration needs roughly fifty recordings of the user's own voice, each
-hand-labelled with which words were deliberately misread. That cannot be produced without a
-microphone grant and about an hour of reading. The scorer therefore runs on its shipped
-defaults, tuned against synthetic cases only.
+**Status:** BLOCKED — updated 2026-09-15. Still blocked, but on **less**: the prerequisite
+that could have invalidated the whole methodology is now settled, and the recording path
+works. What remains is an hour of reading, not a design question.
+**Blocker:** roughly fifty recordings of the user's own voice, each hand-labelled with which
+words were deliberately misread. The scorer therefore still runs on its shipped defaults,
+tuned against synthetic cases only.
+**Resolved 2026-09-15 — the confidence prerequisite.** Step 2 of "To unblock" below is done,
+and it came back the favourable way: per-word confidence is non-zero and varying (mean
+0.7776, 8 distinct values, min 0.194, max 0.986), so **item 03's hard-to-hear rule stands as
+designed and the metering fallback is not needed**. Two conditions apply — it requires the
+modern Speech API with `attributeOptions: [.transcriptionConfidence]`, and legacy
+`SFSpeechRecognizer` produces nothing at all on macOS 26.6.1. See item 10.
 **Changed:** Tests/CalibrationTests.swift, Tests/Fixtures/README.md
 **Verified:** the harness exists and runs. With no fixtures it prints
 "CALIBRATION NOT RUN" and explains why, rather than passing quietly — a calibration suite
@@ -132,10 +139,45 @@ rather than a design problem:
 
 ## To unblock
 
-1. Grant the microphone and speech recognition.
-2. Check first whether `SFTranscriptionSegment.confidence` is non-zero on this machine. If
-   it is uniformly 0.0, the hard-to-hear rule rests on a constant and item 03's fallback
-   applies. This is the single highest-value thing to check.
-3. Record the six categories, roughly fifty takes, and label each one.
+1. ~~Grant the microphone and speech recognition.~~ **Done 2026-09-15.** Both granted and
+   persisted. The recognition grant needed a crash fix first; see item 06.
+2. ~~Check first whether confidence is non-zero on this machine.~~ **Done 2026-09-15, and it
+   is.** Not via `SFTranscriptionSegment.confidence`, which is unreachable because legacy
+   on-device recognition returns nothing on this OS, but via the modern API's
+   `.transcriptionConfidence` attribute. Non-zero and varying, so no fallback is needed.
+2a. **New prerequisite, from item 10.** Decide the transcription API before recording the
+   corpus. Fixtures capture a transcript with its segments, confidences and timings, so they
+   are only reusable if produced by the API the app will actually ship with. Recording fifty
+   takes through a path that is about to be replaced would mean re-transcribing all of them.
+   Note the audio itself stays valid either way — only the transcripts would need redoing.
+3. Record the six categories, roughly fifty takes, and label each one. **Trim input gain
+   first** — the one take recorded so far clips at 0 dBFS, and a clipped corpus would tune
+   the scorer against distortion rather than speech. See item 08.
 4. Split about thirty tuning and twenty held out, and do not look at the held-out set until
    the cost table is frozen.
+
+## A finding worth folding into the methodology — 2026-09-15
+
+On the single take measured so far, **confidence correlated with correctness**:
+
+```
+Oh,     0.1940   <- misheard ("The fog")
+came    0.4410   <- misheard boundary
+in      0.9610      on    0.9860      a      0.9850
+little  0.9570      cat   0.9480      feet.  0.7490
+```
+
+Every correctly-recognised word scored above 0.94; both errors scored below 0.45. If that
+holds across the corpus, confidence is useful for more than the hard-to-hear gate — it could
+sharpen which words get flagged, which is this item's core job.
+
+Two cautions before acting on it. **One take is not evidence**, and this is exactly the kind
+of pattern that looks compelling at n=1 and evaporates at n=50; treat it as a hypothesis the
+corpus can test, not a design input. And the plan's own rule still governs: the tunable
+constants are fixed to the similarity threshold, the five cost-table entries and the two
+hard-to-hear constants. Introducing confidence as a *new* scoring input is a change to item
+03's design, not a calibration, and the invariant tests must not move to accommodate it.
+
+Suggested addition to the fixture format: record the confidence distribution per take, so
+whether the correlation holds becomes a measurable property of the corpus instead of an
+impression.

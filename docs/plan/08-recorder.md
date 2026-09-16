@@ -42,9 +42,13 @@ Closed by adding the orchestration that was missing:
   so its target is not recoverable from disk and adopting would mean inventing one.
 - ⌘R is a real `CommandMenu("Practice")` item, along with ⌘P for the reference.
 
-**Blocked:** a take of the user's own voice reading a known sentence. The path works; what
-is missing is a labelled recording, which is also what item 11 needs. The device-unplug and
-force-quit gates are still unattempted.
+**Blocked:** the device-unplug, force-quit and machine-sleep gates, which need a human
+doing something physical at the right moment.
+
+**2026-09-15 — no longer blocked: a take of the user's own voice now exists.** Kept at
+`~/Desktop/take.m4a`, 8.40s of "The fog came in on little cat feet." See
+**Real speech, independently confirmed** below. This is also the first input item 11 has
+ever had.
 
 **2026-09-15 — the prompt was audible but invisible.** The probe spoke the sentence through
 Ava and never printed it, and Swift's stdout is fully buffered when it is not a terminal, so
@@ -308,3 +312,46 @@ mono, finalized by the delegate in 0.73 s, readable back as audio. Peak level 0.
 the whole window, with the microphone reported granted, the built-in mic the live default,
 and input volume at 37 — so the encoder, the delegate await, the staging path and the
 no-input heuristic are all proven, and only the captured signal is missing.
+
+## Real speech, independently confirmed — 2026-09-15
+
+The handoff's open question was whether the microphone yielded a silent stream or whether
+nobody had spoken during the window. It was the latter. Every earlier run measured peak
+0.00 because the window closed unspoken.
+
+An 8-second run with the prompt actually read aloud:
+
+```
+recording 8 seconds. READ IT NOW:
+  1.0s  level 0.70  #####################
+  2.0s  level 0.82  ########################
+  3.0s  level 0.87  ##########################
+  4.0s  level 0.93  ############################
+  5.0s  level 0.25  #######
+  8.0s  level 0.15  ####
+
+duration: 8.40s   size: 124346 bytes   peak level: 0.93
+finalized by the delegate: true      no input detected: false
+readable: 370624 frames, 44100 Hz, 1 channel
+```
+
+**Verified without trusting the meter**, because a level meter reporting on its own input is
+not independent evidence. Decoding the `.m4a` to 16-bit PCM and measuring samples directly:
+370,624 frames at 44100 Hz, **RMS −21.4 dBFS**, per-second peaks showing speech in seconds
+0–4 and near-silence after. The audio is genuinely present, and the meter was telling the
+truth.
+
+This also closes the meter gate above: the bar rests at zero in silence *and* tracks speech.
+
+### One defect to fix before item 11 records fifty takes
+
+True peak reaches **1.0000 (0 dBFS)** — the take is clipping. The probe's reported 0.93 is
+an average-power reading and understates it, so `peakLevel` alone will not catch this.
+
+It matters for calibration specifically. Clipped consonants are exactly what a recognizer
+mishears, so a clipped fixture set would tune the scorer against distortion rather than
+against speech. Trim input gain before recording the set.
+
+Worth considering a pre-flight that warns when gain would clip. The plan already pre-flights
+available disk space before arming, and this is the same shape of problem — cheap to check
+up front, expensive to discover in a labelled corpus.

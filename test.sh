@@ -16,7 +16,7 @@ CLT="$(xcode-select -p)"
 FRAMEWORKS="$CLT/Library/Developer/Frameworks"
 PLUGINS="$CLT/usr/lib/swift/host/plugins/testing"
 INTEROP="$CLT/Library/Developer/usr/lib"
-TARGET="arm64-apple-macos14.0"
+TARGET="arm64-apple-macos26.0"
 SDK="${ORAL_SDK:-$(xcrun --show-sdk-path)}"
 OUT="build/runtests"
 

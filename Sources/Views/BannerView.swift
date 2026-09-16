@@ -59,7 +59,8 @@ struct BannerView: View {
 
     private var actionTitle: String {
         switch kind {
-        case .micDenied, .recognitionDenied, .offlineModelMissing: return "Open settings"
+        case .micDenied, .recognitionDenied: return "Open settings"
+        case .offlineModelMissing: return "Download model"
         case .librarySynced: return "Move library"
         case .voiceQuality: return "Open settings"
         }

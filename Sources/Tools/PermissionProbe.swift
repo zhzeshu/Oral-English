@@ -8,13 +8,19 @@ import Speech
 @main
 struct PermissionProbe {
     @MainActor
-    static func main() {
+    static func main() async {
         let service = PermissionService()
         service.refresh()
+        // Async, and the only trustworthy check. `refresh()` deliberately leaves it alone.
+        await service.refreshModelAvailability()
 
         print("microphone:            \(service.microphone.rawValue)")
         print("speech recognition:    \(service.recognition.rawValue)")
-        print("offline en-US model:   \(service.offlineModelAvailable ? "available" : "NOT available")")
+        print("offline en-US model:   \(service.offlineModelAvailable ? "INSTALLED" : "NOT installed")"
+              + "  (AssetInventory)")
+        print("legacy supportsOnDeviceRecognition: "
+              + "\(PermissionService.onDeviceRecognitionAvailable())"
+              + "  <- capability only, do not gate on this")
 
         let m = service.matrix
         print("\nwhat works right now:")
