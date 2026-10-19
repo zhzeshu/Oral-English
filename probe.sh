@@ -28,6 +28,14 @@ SRC="Sources/Tools/$NAME.swift"
 # scene, which would collide with the probe's entry point.
 CORE=()
 while IFS= read -r -d '' f; do CORE+=("$f"); done < <(find Sources/Core Sources/Services -name '*.swift' -print0)
+# The app layer too, minus its entry point. AppModel is where the intents live -- the
+# sequence a button press actually runs -- and a probe that stops at the service boundary
+# cannot see a bug in that sequence. OralEnglishApp.swift is excluded because its @main
+# would collide with the probe's.
+while IFS= read -r -d '' f; do
+    case "$f" in */OralEnglishApp.swift) continue ;; esac
+    CORE+=("$f")
+done < <(find Sources/App -name '*.swift' -print0)
 
 mkdir -p build
 plutil -lint Resources/ProbeInfo.plist >/dev/null

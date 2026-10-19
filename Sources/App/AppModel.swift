@@ -125,6 +125,34 @@ public final class AppModel {
         }
     }
 
+    /// The highlight range for a row, in offsets that land on **that row's own text**.
+    ///
+    /// The controller reports offsets inside the sentence being spoken, because synthesis
+    /// runs one utterance per sentence and starts counting again at each one. A sentence
+    /// row can use them directly. A paragraph or whole-passage row draws several sentences,
+    /// so the offset has to be shifted by where that sentence begins in the row's text —
+    /// without the shift every highlight landed inside the first sentence, which read as a
+    /// highlight that ran once and then stopped.
+    public func spokenRange(for ref: TargetRef) -> (location: Int, length: Int)? {
+        guard practice.speakingTarget == ref, let local = practice.spokenRange else { return nil }
+        guard let index = practice.spokenSentenceIndex, index > 0 else { return local }
+        let starts = sentenceStarts(for: ref)
+        guard index < starts.count else { return local }
+        return (location: starts[index] + local.location, length: local.length)
+    }
+
+    /// Cached per target: the search runs over the whole paragraph, and an uncached call
+    /// would repeat it for every word callback and again for every view body.
+    private var sentenceStartsCache: (ref: TargetRef, starts: [Int])?
+
+    private func sentenceStarts(for ref: TargetRef) -> [Int] {
+        if let cached = sentenceStartsCache, cached.ref == ref { return cached.starts }
+        guard let loaded, let text = loaded.passage.text(for: ref) else { return [] }
+        let starts = SpokenRange.sentenceStarts(in: text, sentences: sentences(for: ref))
+        sentenceStartsCache = (ref, starts)
+        return starts
+    }
+
     public func playReference(_ ref: TargetRef) async {
         selectedTarget = ref
         await practice.playReference(
@@ -175,8 +203,16 @@ public final class AppModel {
         guard let folder = selectedFolder, loaded != nil else { return }
 
         // Asked for here, on the first tap, rather than at launch.
+        //
+        // The gate is "has this been asked yet", NOT `canRecord`. `canRecord` treats
+        // `notDetermined` as available on purpose -- the permission is meant to be
+        // requested on the first tap -- so gating the request on `!canRecord` meant the
+        // request never ran in exactly the state it exists for. First tap on a fresh
+        // install: no dialog, recognition never requested at all, the recorder armed
+        // against a microphone with no grant, and a take of silence. That is the whole of
+        // "recording is not working".
         var matrix = permissions.matrix
-        if !matrix.canRecord {
+        if permissions.microphone.needsAsking || permissions.recognition.needsAsking {
             matrix = await requestRecordingPermissions()
         }
         guard practice.canRecord(matrix) else {
@@ -205,9 +241,13 @@ public final class AppModel {
             practice.finishRecording()
             Log.failure(Log.audio, f, context: "record start")
             errorMessage = f.userMessage
+            // Returning matters: without it a failed start still recorded a pending take,
+            // so the next stop would try to adopt a file that was never written.
+            return
         } catch {
             practice.finishRecording()
             Log.unexpected(Log.audio, error, context: "record start")
+            return
         }
         pendingTake = PendingTake(id: id, target: ref, startedAt: Date())
     }
@@ -510,6 +550,7 @@ public final class AppModel {
         settings.lastPassageFolder = folderName
         expandedTarget = nil
         selectedTarget = nil
+        sentenceStartsCache = nil
         do {
             loaded = try await store.load(folderName: folderName)
             rebuildRowSummaries()

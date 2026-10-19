@@ -45,7 +45,7 @@ struct PassageDetailView: View {
                                 isExpanded: model.expandedTarget == ref,
                                 nestedSentences: nested(for: ref, in: loaded),
                                 isSpeaking: model.practice.speakingTarget == ref,
-                                spokenRange: model.practice.spokenRange,
+                                spokenRange: model.spokenRange(for: ref),
                                 canPlay: model.practice.canPlayReference(),
                                 isRecordingThis: model.isRecording(ref),
                                 canRecord: model.practice.recordingTarget == nil

@@ -67,6 +67,33 @@ text has to be visible while it is read.
 **Verification style:** probe-first, then verified against QuickTime. The activity state
 machine and the level conversion are pure and unit-tested.
 
+**2026-10-19 — the first record tap never asked for permission.** Reported from use: "the
+recording is not working."
+
+`startRecording` requested permissions only `if !matrix.canRecord`. But `canRecord` counts
+`notDetermined` as available **by design** — item 06 chose that so the request could happen
+on the first tap rather than at launch. So the condition was false in exactly the state it
+existed for, and the request never ran: no dialog, recognition never requested at all, the
+recorder armed against a microphone with no grant, and a take of silence that reported
+"No sound reached the microphone."
+
+Two things wrong, one of them mine from 2026-09-15:
+
+- The gate is now "has this been asked yet", via a new `PermissionState.needsAsking`, with
+  4 tests. It is deliberately **not** `!isGranted`: re-requesting a refused permission
+  returns the stored denial without showing anything, so the button would silently do
+  nothing twice.
+- A failed `recorder.start` fell through and still set `pendingTake`, so the next stop
+  would try to adopt a file that was never written. It returns now.
+
+The recording path itself was never broken — `IntentProbe` records, adopts and appends a
+take through `AppModel`'s own intents, and `TranscribeProbe` scores a real take at 69% with
+per-word confidence from 0.194 to 0.986. What was broken was getting permission to do it.
+
+**New:** `Sources/Tools/IntentProbe.swift`, and `probe.sh` now compiles `Sources/App` (minus
+its `@main`). Every other probe stops at the service boundary, where each part works on its
+own; this one runs the sequence a button press runs, which is where this bug lived.
+
 ## Goal
 
 Record a sentence, keep the take on disk with a timestamped name, and show a live input

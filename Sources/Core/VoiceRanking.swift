@@ -161,4 +161,44 @@ public enum SpokenRange {
         guard let r = range(in: text, utf16Location: utf16Location, utf16Length: utf16Length) else { return nil }
         return String(text[r])
     }
+
+    /// Where each sentence begins inside the text of the target that contains it, in UTF-16
+    /// units — the offsets needed to turn a sentence-local highlight range into one that
+    /// lands on a paragraph or whole-passage row.
+    ///
+    /// **Why this exists.** The synthesizer speaks one sentence per utterance, so its word
+    /// callbacks are offsets into *that sentence*, starting again at zero for each one. A
+    /// paragraph row draws the whole paragraph. Applying a sentence-local offset to the
+    /// paragraph string put every highlight inside the first sentence, for the entire
+    /// paragraph: the symptom was a highlight that ran once and then stopped, when in fact
+    /// it was restarting at the top each time.
+    ///
+    /// Found by sequential search rather than by re-joining the sentences with an assumed
+    /// separator. Paragraph text is stored as it was written, so the whitespace between two
+    /// sentences is whatever the author typed; and searching forward from the end of the
+    /// previous match is what makes a passage that repeats a sentence resolve to the right
+    /// occurrence rather than always the first.
+    ///
+    /// A sentence that cannot be located yields its best-known position and does not
+    /// desynchronize the ones after it. The caller treats a bad offset as "no highlight",
+    /// which is the same supported case as a voice that emits no ranges at all.
+    public static func sentenceStarts(in text: String, sentences: [String]) -> [Int] {
+        var starts: [Int] = []
+        starts.reserveCapacity(sentences.count)
+        var searchFrom = text.startIndex
+
+        for sentence in sentences {
+            guard !sentence.isEmpty,
+                  let found = text.range(of: sentence, range: searchFrom..<text.endIndex)
+            else {
+                // Unlocatable: report the current scan position rather than zero, so the
+                // highlight stays near the right place instead of jumping to the top.
+                starts.append(text.utf16.distance(from: text.startIndex, to: searchFrom))
+                continue
+            }
+            starts.append(text.utf16.distance(from: text.startIndex, to: found.lowerBound))
+            searchFrom = found.upperBound
+        }
+        return starts
+    }
 }

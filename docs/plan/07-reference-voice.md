@@ -19,6 +19,30 @@ audio.
 **Verification style:** probe-first, then judged by ear against a blind control. The tier
 ranking is a pure function and is unit-tested.
 
+**2026-10-19 — the highlight stopped after the first sentence.** Reported from use:
+"when read in paragraph and whole, the highlight only run on the first sentence."
+
+It was not stopping. It was restarting. This item speaks **one utterance per sentence** on
+purpose, and `AVSpeechSynthesizer` reports word offsets relative to the utterance, so every
+sentence begins counting again at zero. A sentence row draws one sentence and is therefore
+correct by accident; a paragraph or whole-passage row draws several, so each new sentence's
+offsets landed back inside the opening words.
+
+This item's own note claimed two-level highlighting "falls out" of one-utterance-per-
+sentence. It does not: it needs the offset of each sentence within the target text, and
+nothing computed one.
+
+- `SpokenRange.sentenceStarts(in:sentences:)` — pure, 8 tests. Sequential search rather than
+  re-joining with an assumed separator: paragraph text is stored as written, so the
+  whitespace between sentences is whatever the author typed, and searching forward from the
+  previous match is what makes a repeated sentence resolve to the right occurrence.
+- `PracticeController.spokenSentenceIndex` publishes which sentence is being spoken.
+- `AppModel.spokenRange(for:)` shifts the local range into row coordinates, cached per
+  target so the search does not re-run on every word callback and every view body.
+
+**Verified** by `./probe.sh IntentProbe`, which samples the range the row would draw: all
+17 words across a 3-sentence paragraph, in order, every sentence reached.
+
 ## Goal
 
 Per-sentence playback in a voice that sounds like a native American speaker rather than a

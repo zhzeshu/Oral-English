@@ -9,6 +9,13 @@ public enum PermissionState: String, Codable, Sendable, CaseIterable {
 
     public var isGranted: Bool { self == .granted }
     public var isRefused: Bool { self == .denied || self == .restricted }
+
+    /// True when the system has never been asked, so asking is still worth doing.
+    ///
+    /// Distinct from `!isGranted`: a refused permission must not be re-requested, because
+    /// the system returns the stored denial without showing anything and the user is left
+    /// with a button that silently does nothing twice.
+    public var needsAsking: Bool { self == .notDetermined || self == .unknown }
 }
 
 /// What the app can do in a given permission state, as a pure function.

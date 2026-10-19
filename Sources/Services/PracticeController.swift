@@ -21,8 +21,16 @@ public final class PracticeController {
     public private(set) var audio: AudioActivity = .idle
     public private(set) var inFlight: Set<TargetRef> = []
 
-    /// UTF-16 offsets into the text currently being spoken, for word highlighting.
+    /// UTF-16 offsets into the **sentence** currently being spoken, for word highlighting.
+    ///
+    /// Sentence-local, not target-local: one utterance per sentence means the synthesizer
+    /// restarts these at zero for every sentence. A paragraph or whole-passage row draws
+    /// more than one sentence, so it must shift these by `spokenSentenceIndex` before use —
+    /// see `AppModel.spokenRange(for:)`. Applying them raw is what confined the highlight
+    /// to the first sentence of every paragraph.
     public private(set) var spokenRange: (location: Int, length: Int)?
+    /// Which sentence of the current target is being spoken, counting from zero.
+    public private(set) var spokenSentenceIndex: Int?
     public private(set) var speakingTarget: TargetRef?
 
     /// Live input level, 0 to 1, while recording.
@@ -72,10 +80,12 @@ public final class PracticeController {
             audio = .idle
             speakingTarget = nil
             spokenRange = nil
+            spokenSentenceIndex = nil
         }
 
-        for sentence in sentences {
+        for (index, sentence) in sentences.enumerated() {
             guard case .speaking = audio else { return }
+            spokenSentenceIndex = index
             do {
                 try await voice.speak(sentence, voice: selected, rate: rate) { [weak self] location, length in
                     Task { @MainActor in
@@ -132,6 +142,7 @@ public final class PracticeController {
         audio = .idle
         speakingTarget = nil
         spokenRange = nil
+        spokenSentenceIndex = nil
         inputLevel = 0
     }
 

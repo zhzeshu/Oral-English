@@ -112,3 +112,44 @@ struct PermissionMatrixTests {
         #expect(BannerKind.librarySynced.isDismissible)
     }
 }
+
+/// The distinction the record button depends on.
+///
+/// Regression cover for "recording is not working": the first tap gated its permission
+/// request on `canRecord`, which is true while the microphone is `notDetermined` — so the
+/// request never ran in the one state it exists for.
+@Suite("PermissionState.needsAsking")
+struct PermissionNeedsAskingTests {
+
+    @Test("only the never-asked states are worth asking about")
+    func onlyUndetermined() {
+        #expect(PermissionState.notDetermined.needsAsking)
+        #expect(PermissionState.unknown.needsAsking)
+        #expect(!PermissionState.granted.needsAsking)
+        #expect(!PermissionState.denied.needsAsking)
+        #expect(!PermissionState.restricted.needsAsking)
+    }
+
+    @Test("every state is covered, so a new one cannot slip through unclassified")
+    func exhaustive() {
+        for state in PermissionState.allCases {
+            let classified = state.needsAsking || state.isGranted || state.isRefused
+            #expect(classified, "\(state) is in none of the three buckets")
+        }
+    }
+
+    @Test("needsAsking is not the negation of granted, which is the trap")
+    func notTheSameAsUngranted() {
+        // A refused permission must not be re-requested: the system returns the stored
+        // denial without showing anything, so the button appears to do nothing twice.
+        #expect(!PermissionState.denied.isGranted)
+        #expect(!PermissionState.denied.needsAsking)
+    }
+
+    @Test("a notDetermined microphone still reports canRecord, which is why the gate was wrong")
+    func canRecordIsNotAReadinessCheck() {
+        let fresh = PermissionMatrix(microphone: .notDetermined, recognition: .notDetermined)
+        #expect(fresh.canRecord, "notDetermined counts as available by design")
+        #expect(fresh.microphone.needsAsking, "so readiness has to be asked separately")
+    }
+}
