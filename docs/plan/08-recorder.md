@@ -94,6 +94,35 @@ per-word confidence from 0.194 to 0.986. What was broken was getting permission 
 its `@main`). Every other probe stops at the service boundary, where each part works on its
 own; this one runs the sequence a button press runs, which is where this bug lived.
 
+**2026-10-19 — "microphone access is off, and the app is not in Privacy settings."**
+
+The app was signed `--options runtime` with **no entitlements file at all**. The hardened
+runtime does not only harden a process; it revokes access to protected resources unless the
+matching entitlement is present. So the microphone was refused before any prompt could
+happen — and because the app never got as far as asking, macOS had nothing to list, which
+is why Privacy & Security showed no row to switch on. A usage string in `Info.plist` is
+necessary but not sufficient; only the missing half is silent.
+
+This had been masked all along. Direct-mode probes worked because the **terminal** was the
+responsible process and carried its own grant. Bundle-mode probes were denied, and that was
+recorded in this file as "a non-interactive session cannot present a dialog" — a theory that
+fit every observation and was wrong. That claim is struck through below.
+
+- `Resources/OralEnglish.entitlements` — `com.apple.security.device.audio-input` and
+  `com.apple.security.personal-information.speech-recognition`. No comments in it: codesign
+  hands entitlements to AMFI, whose parser rejects an XML comment with
+  `AMFIUnserializeXML: syntax error`.
+- `build.sh` passes `--entitlements`, fails hard if the file is missing, and **asserts the
+  entitlement is present in the signed bundle** before installing. This is the failure mode
+  that most deserves an assertion: clean build, valid signature, app launches, microphone
+  silently gone.
+- `probe.sh` signs the same way.
+
+**Verified** end to end from this non-interactive session, which the struck-through section
+says is impossible: `ORAL_SPEAK=1 ./probe.sh IntentProbe 7` recorded 7.22s at peak 0.47,
+adopted the take, transcribed it and scored it at 31% — low only because the microphone was
+picking Ava up across the room, with the first half of the sentence clipped.
+
 ## Goal
 
 Record a sentence, keep the take on disk with a timestamped name, and show a live input
@@ -299,10 +328,23 @@ Force-quit recovery, the sleep path, and device loss mid-recording. Those need a
 unplugging something or killing the app at the right moment, and they are the paths most
 likely to still hold a bug.
 
-## A probe cannot obtain a microphone grant from a non-interactive session
+## ~~A probe cannot obtain a microphone grant from a non-interactive session~~
 
-Established the hard way, and worth writing down so nobody repeats it. Four routes were
-tried against the probe bundle `com.zackzhang.oralenglish.probe`:
+> **Wrong, corrected 2026-10-19.** The conclusion below was drawn from four careful
+> experiments and was still wrong, because all four shared a cause none of them varied:
+> every bundle was signed `--options runtime` with **no entitlements**. The hardened
+> runtime revokes access to protected resources unless the matching entitlement is
+> present, so the microphone was being refused by code signing, not by the session. Once
+> `com.apple.security.device.audio-input` was added, the `open -W` route in the table
+> below — recorded here as auto-denied — returned **granted** from this same
+> non-interactive session, and a full record-transcribe-score run completed through it.
+>
+> The lesson is about method, not macOS: four routes were varied and the one constant was
+> never questioned. "The session cannot prompt" was a theory that explained the evidence
+> and happened to be false, and it was written down as established fact. The table is kept
+> because its first two rows are still true and still useful.
+
+Four routes were tried against the probe bundle `com.zackzhang.oralenglish.probe`:
 
 | Route | Result |
 | --- | --- |
@@ -311,9 +353,10 @@ tried against the probe bundle `com.zackzhang.oralenglish.probe`:
 | Real `.app`, launched with `open -W --stdout` | Own identity, `mainBundle` resolves, both usage strings readable — and the request still flips `notDetermined` to `denied` **with no dialog** |
 | Same, plus an `NSApplication` accessory host, installed to `~/Applications`, privacy record reset | Identical auto-denial |
 
-So the blocker is not the plist, not the bundle, not the signature and not the location. It
-is that this session cannot present an interactive permission dialog, and macOS denies
-rather than prompting.
+So the blocker is not the plist, not the bundle and not the location. ~~It is that this
+session cannot present an interactive permission dialog.~~ **It was the signature after
+all** — specifically the hardened runtime without the audio-input entitlement. See the
+correction above.
 
 **What this means for the workflow.** Recording verification has to happen either in the
 real app, which already holds the grant, or by the user running the probe from their own

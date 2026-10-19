@@ -109,12 +109,32 @@ plutil -lint "$STAGE/Contents/Info.plist" >/dev/null
 # microphone under this app's privacy grant. It works with a self-signed certificate;
 # only notarization would need a Developer ID, and this app does not seek that.
 #
+# --entitlements is NOT optional once the runtime is on. The hardened runtime revokes
+# access to protected resources unless the matching entitlement is present, so the two
+# flags belong together: with the runtime and without the entitlements the microphone is
+# refused outright, with no prompt and no row in System Settings to turn it back on. A
+# usage string in Info.plist is necessary but not sufficient. Verified after the fact --
+# the app was shipped this way and reported "microphone access is off" with nothing to
+# switch on anywhere.
+#
 # Status is captured separately from output filtering. Piping into `grep -v` and
 # appending `|| true` would discard codesign's exit status entirely, so a failed
 # signature would install over a working app and present later as a dead microphone.
+# Why this file has no comments in it: codesign hands entitlements to AMFI, whose parser
+# is not a general plist reader. An XML comment fails with "AMFIUnserializeXML: syntax
+# error near line 6" and the signature is refused. The explanation therefore lives here.
+ENTITLEMENTS="Resources/OralEnglish.entitlements"
+if [ ! -f "$ENTITLEMENTS" ]; then
+    echo "Missing $ENTITLEMENTS. The hardened runtime would silently revoke the" >&2
+    echo "microphone, so this is a hard failure rather than a warning." >&2
+    exit 1
+fi
+plutil -lint "$ENTITLEMENTS" >/dev/null
+
 if ! sign_out=$(codesign --force --sign "$SIGN_ID" \
         --identifier "$BUNDLE_ID" \
         --options runtime \
+        --entitlements "$ENTITLEMENTS" \
         --timestamp=none "$STAGE" 2>&1); then
     printf '%s\n' "$sign_out" >&2
     echo "codesign failed. Not installing; the previous build is untouched." >&2
@@ -146,6 +166,18 @@ if [ "$SIGN_ID" != "-" ]; then
         exit 1
     fi
 fi
+
+# The entitlement is the one thing that fails silently and at a distance: the build is
+# clean, the signature verifies, the app launches, and the microphone is simply gone. So it
+# is asserted here rather than trusted.
+ents=$(codesign -d --entitlements - --xml "$STAGE" 2>/dev/null || true)
+if ! printf '%s' "$ents" | grep -q 'com.apple.security.device.audio-input'; then
+    echo "The signed bundle carries no audio-input entitlement." >&2
+    echo "With --options runtime that means no microphone, no prompt, and no row in" >&2
+    echo "System Settings to fix it. Refusing to install." >&2
+    exit 1
+fi
+echo "audio-input entitlement present"
 
 # --- 5. Install to the stable path --------------------------------------------------
 rm -rf "$DEPLOY"

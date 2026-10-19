@@ -164,11 +164,15 @@ they are the things a fresh session would otherwise rediscover.
    is named "Ava (Premium)". Both prefixes are recognized and pinned by test. (Item 07)
 9. **Word callbacks are not one per word**, and the count varies by voice. Consume ranges as
    they arrive. A voice emitting none is a supported case. (Item 07)
-10. **A probe cannot get a microphone grant from a non-interactive session.** Four routes
-    tried, all documented in item 08. Neither an embedded plist, nor a real bundle, nor an
-    `NSApplication` host, nor a trusted location works: macOS denies rather than prompting.
-    `ORAL_PROBE_DIRECT=1` borrows the terminal's grant and must never touch `Speech`,
-    because merely reading the recognition status is privacy-gated and kills the process.
+10. **The hardened runtime revokes the microphone unless you entitle it.** `--options
+    runtime` with no `--entitlements` means no microphone, no prompt, and no row in System
+    Settings to turn it back on, because the app never gets far enough to ask. A usage
+    string in `Info.plist` is necessary and not sufficient. `build.sh` now asserts the
+    entitlement is in the signed bundle. (Corrected 2026-10-19; this entry previously
+    claimed a non-interactive session cannot obtain a grant, which was a theory that fit
+    the evidence and was false — see item 08.) `ORAL_PROBE_DIRECT=1` borrows the terminal's
+    grant and must never touch `Speech`, because merely reading the recognition status is
+    privacy-gated and kills the process.
 11. **A probe that pumps the run loop cannot be `async`.** `RunLoop.current` is unavailable
     from an async context. `VoiceProbe` is synchronous; `BakeProbe` is async because its
     continuation is driven by the concurrency runtime. (Item 07)

@@ -98,7 +98,13 @@ fi
 # the project certificate when it exists, so probe grants are as stable as the app's.
 SIGN="${ORAL_PROBE_SIGN_ID:-}"
 if [ -z "$SIGN" ] && [ -f .signing-identity ]; then SIGN="$(cat .signing-identity)"; fi
-codesign --force --sign "${SIGN:--}" --options runtime "$APP" >/dev/null 2>&1 \
+# --entitlements for the same reason the app needs it: --options runtime revokes the
+# microphone unless the entitlement is present. This is very likely why a probe launched
+# with `open` was denied without ever showing a dialog, which was recorded at the time as
+# "the session cannot present a prompt" -- the session may have been innocent all along.
+ENTS="Resources/OralEnglish.entitlements"
+codesign --force --sign "${SIGN:--}" --options runtime --entitlements "$ENTS" "$APP" >/dev/null 2>&1 \
+  || codesign --force --sign - --options runtime --entitlements "$ENTS" "$APP" >/dev/null 2>&1 \
   || codesign --force --sign - "$APP" >/dev/null 2>&1 || true
 
 # Launch with `open`, not by running the binary.
