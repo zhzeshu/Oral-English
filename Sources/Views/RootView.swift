@@ -18,8 +18,15 @@ struct RootView: View {
                 }
                 PassageDetailView(showingNewPassage: $showingNewPassage)
             }
+            .background(Styling.canvas)
         }
         .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 280)
+        // Light, always. The app inherited the system appearance, and on a Mac set to dark
+        // that made the page you read from near-black. Pinning it is a deliberate product
+        // decision rather than an oversight: this is a reading surface, and it should look
+        // like paper under every system setting.
+        .preferredColorScheme(.light)
+        .tint(Styling.accent)
         .sheet(isPresented: $showingNewPassage) { NewPassageSheet() }
         .task { await model.bootstrap() }
         // A second instance cannot share the library safely, so it says why and quits

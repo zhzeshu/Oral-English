@@ -51,6 +51,8 @@ struct LibrarySidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(Styling.canvas)
     }
 
     private func row(_ summary: PassageSummary) -> some View {

@@ -80,6 +80,11 @@ public final class AppleVoiceProvider: ReferenceVoice {
         }
         u.rate = Float(rate)
         u.preUtteranceDelay = 0
+        // A breath between sentences. Reference playback speaks one utterance per sentence
+        // and ran them back to back with no gap, which is a large part of why a premium
+        // voice still sounded mechanical: nobody reads a paragraph without pausing at a
+        // full stop. Short enough not to drag, long enough to hear as punctuation.
+        u.postUtteranceDelay = 0.18
         return u
     }
 

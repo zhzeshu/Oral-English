@@ -410,6 +410,37 @@ public final class AppModel {
         await playTake(take)
     }
 
+    /// Plays your own best take for this target, straight from the row.
+    ///
+    /// Hearing yourself back is half of what the app is for, and it was reachable only by
+    /// opening the take history: the menu advertised "⌘P — play my take" and nothing
+    /// implemented it. Reported as "I should be able to press and directly listen to my
+    /// speak."
+    ///
+    /// Best rather than most recent, matching the accuracy shown on the row — the number
+    /// and the audio should refer to the same take.
+    public func playBestTake(_ ref: TargetRef) async {
+        guard let loaded, let take = loaded.bestTake(for: ref) else { return }
+        await playTake(take)
+    }
+
+    /// True when this target has a take that can be played back right now.
+    public func canPlayTake(_ ref: TargetRef) -> Bool {
+        guard let loaded, let take = loaded.bestTake(for: ref) else { return false }
+        return loaded.hasAudio(take) && practice.audio.isIdle
+    }
+
+    /// Moves the selection one row down, wrapping at the end.
+    public func selectNextTarget() {
+        let targets = visibleTargets
+        guard !targets.isEmpty else { return }
+        guard let current = selectedTarget, let i = targets.firstIndex(of: current) else {
+            selectedTarget = targets.first
+            return
+        }
+        selectedTarget = targets[(i + 1) % targets.count]
+    }
+
     /// True when this target has a take worth comparing against.
     public func canCompare(_ ref: TargetRef) -> Bool {
         guard let loaded, let take = loaded.bestTake(for: ref) else { return false }

@@ -28,8 +28,31 @@ struct OralEnglishApp: App {
                     guard let ref = model.selectedTarget else { return }
                     Task { await model.playReference(ref) }
                 }
-                .keyboardShortcut("p", modifiers: .command)
+                // L for listen. ⌘P went to playing your own take, which is what the
+                // in-app menu has advertised since the screen was built. Space would be
+                // the natural key and is deliberately avoided: it would swallow spaces in
+                // the paste sheet's text field.
+                .keyboardShortcut("l", modifiers: .command)
                 .disabled(model.selectedTarget == nil || !model.practice.canPlayReference())
+
+                Button("Play My Take") {
+                    guard let ref = model.selectedTarget else { return }
+                    Task { await model.playBestTake(ref) }
+                }
+                .keyboardShortcut("p", modifiers: .command)
+                .disabled(model.selectedTarget.map { !model.canPlayTake($0) } ?? true)
+
+                Button("Compare") {
+                    guard let ref = model.selectedTarget else { return }
+                    Task { await model.compareBest(ref) }
+                }
+                .keyboardShortcut("b", modifiers: .command)
+                .disabled(model.selectedTarget.map { !model.canCompare($0) } ?? true)
+
+                Divider()
+
+                Button("Next Sentence") { model.selectNextTarget() }
+                    .keyboardShortcut(.downArrow, modifiers: .command)
             }
         }
     }

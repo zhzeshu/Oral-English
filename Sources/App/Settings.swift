@@ -19,7 +19,7 @@ public final class Settings {
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.voiceIdentifier = defaults.string(forKey: Keys.voiceIdentifier)
-        self.speakingRate = defaults.object(forKey: Keys.speakingRate) as? Double ?? 0.45
+        self.speakingRate = defaults.object(forKey: Keys.speakingRate) as? Double ?? Settings.naturalSpeakingRate
         self.playbackRate = defaults.object(forKey: Keys.playbackRate) as? Double ?? 1.0
         self.voiceBannerDismissed = defaults.bool(forKey: Keys.voiceBannerDismissed)
         self.lastPassageFolder = defaults.string(forKey: Keys.lastPassageFolder)
@@ -43,6 +43,15 @@ public final class Settings {
     }
 
     /// Slightly below normal, because the reference exists to be imitated.
+    /// `AVSpeechUtteranceDefaultSpeechRate`, written as a literal so this file stays free
+    /// of AVFoundation and can be compiled by the probe and test builds.
+    ///
+    /// The old default was 0.45. A premium voice's prosody is tuned at its own rate, and
+    /// slowing it stretches the vowels and flattens the intonation -- which is heard as
+    /// "mechanical" rather than as "slow". Reverting to the voice's natural rate is the
+    /// single biggest change to how Ava sounds.
+    public static let naturalSpeakingRate: Double = 0.5
+
     public var speakingRate: Double {
         didSet { defaults.set(speakingRate, forKey: Keys.speakingRate) }
     }

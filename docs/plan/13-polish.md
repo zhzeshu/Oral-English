@@ -10,6 +10,38 @@ below
 
 **Verification style:** checklist, and the test for this item is subtractive.
 
+**2026-10-19 — three things reported from real use.**
+
+**The page was black.** The app followed the system appearance, which on this Mac is dark,
+so the surface you read aloud from was near-black. `Styling` now carries a small light
+palette and `RootView` pins `.preferredColorScheme(.light)`. Pinned rather than offered as
+a preference: this is a reading surface and should look like paper under every system
+setting. Two colors do the work — teal for anything pressable, amber for the word being
+spoken and nothing else. Keeping them apart matters; one accent for both would make the
+spoken word look like another button. The score bands were re-darkened, because `.green`
+and `.mint` are tuned for dark backgrounds and wash out to pastel on cream.
+
+**You could not hear yourself.** Playing your own take required opening the take history,
+while this menu had advertised "⌘P — play my take" since the screen was built. `playBestTake`
+plus a `person.wave.2.fill` button on the row — deliberately not a second play triangle,
+because two identical glyphs side by side is how you press the wrong one. Best take rather
+than most recent, so the audio and the percentage on the row refer to the same take. The
+whole advertised shortcut list is now real: ⌘L reference, ⌘R record, ⌘P your take, ⌘B
+compare, ⌘↓ next. Space was the natural key for playback and is deliberately avoided — it
+would swallow spaces in the paste sheet.
+
+**Ava still sounded mechanical.** Two causes in our own code, one ceiling that is not ours:
+
+- The rate was 0.45 against a default of 0.5. A premium voice's prosody is tuned at its own
+  rate, and slowing it stretches vowels and flattens intonation — heard as mechanical rather
+  than as slow. This was the single biggest change.
+- Sentences ran back to back with no gap. `postUtteranceDelay = 0.18` gives a breath at a
+  full stop, which is most of what makes paragraph reading sound read rather than recited.
+- The ceiling: premium is the best tier `AVSpeechSynthesizer` exposes, and Siri voices are
+  not available to third-party apps. This machine has **1 premium voice installed out of
+  42**; the other 41 are the compact tier. More premium voices is choice, not a higher tier.
+  "Get More Voices…" now sits in the Voice menu, and a Speed submenu exposes the rate.
+
 ## Goal
 
 Make the app feel finished and calm. The user reviewed three mockups, chose the native Mac

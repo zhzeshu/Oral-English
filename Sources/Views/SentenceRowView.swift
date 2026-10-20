@@ -19,11 +19,13 @@ struct SentenceRowView: View {
     let canPlay: Bool
     let isRecordingThis: Bool
     let canRecord: Bool
+    let canPlayTake: Bool
     let canCompare: Bool
 
     var onSelect: () -> Void
     var onPlay: () -> Void
     var onRecord: () -> Void
+    var onPlayTake: () -> Void
     var onCompare: () -> Void
     var onToggleExpand: () -> Void
     var onShowHistory: () -> Void
@@ -44,7 +46,7 @@ struct SentenceRowView: View {
 
             if isExpanded { detail }
         }
-        .background(isActive ? Color.primary.opacity(0.04) : Color.clear)
+        .background(isActive ? Styling.activeRow : Color.clear)
         .contentShape(Rectangle())
         .onTapGesture { onSelect() }
     }
@@ -106,10 +108,10 @@ struct SentenceRowView: View {
                 in: summary.text, utf16Location: r.location, utf16Length: r.length),
               let attributedRange = Range(swiftRange, in: out)
         else {
-            out.backgroundColor = Color.accentColor.opacity(0.12)
+            out.backgroundColor = Styling.highlight.opacity(0.28)
             return out
         }
-        out[attributedRange].backgroundColor = Color.accentColor.opacity(0.22)
+        out[attributedRange].backgroundColor = Styling.highlight.opacity(0.55)
         return out
     }
 
@@ -129,12 +131,21 @@ struct SentenceRowView: View {
             .buttonStyle(.plain)
             .disabled(!canRecord && !isRecordingThis)
             .help(isRecordingThis ? "Stop recording (⌘R)" : "Record yourself reading this (⌘R)")
+            // Your own voice, one press away. `play.fill` above is the reference; this is
+            // deliberately a different shape rather than a second play triangle, because
+            // two identical glyphs side by side is how you press the wrong one.
+            Button(action: onPlayTake) {
+                Image(systemName: "person.wave.2.fill")
+            }
+            .buttonStyle(.plain)
+            .disabled(!canPlayTake)
+            .help(canPlayTake ? "Listen to your best take (⌘P)" : "Record yourself first")
             Button(action: onCompare) {
                 Image(systemName: "arrow.left.arrow.right")
             }
             .buttonStyle(.plain)
             .disabled(!canCompare)
-            .help("Hear the reference, then your best take")
+            .help("Hear the reference, then your best take (⌘B)")
             if summary.takeCount > 0 {
                 Button {
                     onToggleExpand()

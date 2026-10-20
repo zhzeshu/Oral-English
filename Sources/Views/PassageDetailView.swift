@@ -50,10 +50,12 @@ struct PassageDetailView: View {
                                 isRecordingThis: model.isRecording(ref),
                                 canRecord: model.practice.recordingTarget == nil
                                     && model.practice.audio.isIdle,
+                                canPlayTake: model.canPlayTake(ref),
                                 canCompare: model.canCompare(ref),
                                 onSelect: { model.selectedTarget = ref },
                                 onPlay: { Task { await model.playReference(ref) } },
                                 onRecord: { Task { await model.toggleRecording(ref) } },
+                                onPlayTake: { Task { await model.playBestTake(ref) } },
                                 onCompare: { Task { await model.compareBest(ref) } },
                                 onToggleExpand: {
                                     model.expandedTarget = model.expandedTarget == ref ? nil : ref
@@ -154,15 +156,26 @@ struct PassageDetailView: View {
                         }
                     }
                 }
+                Divider()
+                // Only one premium voice is installed on this machine out of 42, and the
+                // other 41 are the compact tier this app exists to avoid. More premium
+                // voices is the only lever left on how natural the reference sounds --
+                // premium is already the best tier AVSpeechSynthesizer exposes.
+                Button("Get More Voices…") { Workspace.openPrivacySettings(.spokenContent) }
+            }
+            Menu("Speed") {
+                Button("Slower") { model.settings.speakingRate = 0.42 }
+                Button("Natural") { model.settings.speakingRate = Settings.naturalSpeakingRate }
+                Button("Faster") { model.settings.speakingRate = 0.56 }
             }
             Button("Reveal in Finder") { model.revealInFinder() }
             Divider()
             Section("Keyboard") {
-                Text("Space — play reference")
+                Text("⌘L — play reference")
                 Text("⌘R — record")
                 Text("⌘P — play my take")
                 Text("⌘B — compare")
-                Text("⌘↓ — next")
+                Text("⌘↓ — next sentence")
             }
             Divider()
             Button("Move to Trash", role: .destructive) {
