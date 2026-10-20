@@ -42,6 +42,25 @@ would swallow spaces in the paste sheet.
   42**; the other 41 are the compact tier. More premium voices is choice, not a higher tier.
   "Get More Voices…" now sits in the Voice menu, and a Speed submenu exposes the rate.
 
+**2026-10-19 — the app did not open and close like a Mac app.**
+
+A SwiftUI `WindowGroup` keeps the process alive after its last window closes. That is right
+for a document app -- Pages with no document open is still Pages -- and wrong for this one,
+which has exactly one window and one library. Closing the window left a running process with
+no window and a Dock icon that looked like a dead app.
+
+`AppLifecycle`, an `NSApplicationDelegate`, restores what every other single-window Mac app
+does: `applicationShouldTerminateAfterLastWindowClosed` returns true, and
+`applicationShouldHandleReopen` brings a window back if one is somehow running without one.
+
+It also gave `AppModel.shutdown` its first caller. That method releases the single-instance
+lock and had **no caller at all**, so the one thing it exists to guard was guarded only by
+the file descriptor dying with the process.
+
+Not a bug, but worth recording because it looks like one: the window restores to wherever it
+last was, and on a two-display Mac that can be the display you are not looking at. The app
+opens and appears to do nothing.
+
 ## Goal
 
 Make the app feel finished and calm. The user reviewed three mockups, chose the native Mac
