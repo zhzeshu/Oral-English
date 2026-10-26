@@ -12,20 +12,30 @@ public enum SentenceSplitter {
             self.paragraphs = paragraphs
             self.sentences = sentences
         }
+
+        /// A markdown document that opens with a heading has already named itself.
+        public var suggestedTitle: String? {
+            guard let first = paragraphs.first, first.block?.kind == .heading else { return nil }
+            return first.text
+        }
     }
 
-    /// Paragraphs split on blank lines. Sentences split with `NLTokenizer`.
+    /// Paragraphs are markdown blocks; sentences are split with `NLTokenizer`.
     ///
-    /// There is deliberately **no fallback** to single-newline splitting. Revision 1 of the
-    /// plan specified "split on blank lines, falling back to single newlines when that
-    /// yields one chunk" and simultaneously required `"Line one.\nLine two."` to be one
-    /// paragraph. Those cannot both hold: one chunk triggers the fallback and yields two.
-    /// Normalizing line endings in `TextIntake` and splitting only on blank lines satisfies
-    /// the requirement, and handles CRLF correctly as a side effect.
+    /// Plain prose is valid markdown, so for it a block is exactly what this used to split
+    /// on: text between blank lines. There is deliberately **no fallback** to single-newline
+    /// splitting. Revision 1 of the plan specified "split on blank lines, falling back to
+    /// single newlines when that yields one chunk" and simultaneously required
+    /// `"Line one.\nLine two."` to be one paragraph. Those cannot both hold: one chunk
+    /// triggers the fallback and yields two. Normalizing line endings in `TextIntake` and
+    /// splitting only on blank lines satisfies the requirement, and handles CRLF correctly as
+    /// a side effect.
     ///
     /// The cost is that text using single newlines as paragraph breaks collapses to one
     /// paragraph. Sentences are still found correctly, so only paragraph-level practice is
-    /// affected, and the paste sheet's live count makes it visible before committing.
+    /// affected, and the paste sheet's live count makes it visible before committing. Markdown
+    /// adds the exceptions markdown always has: a heading, a list item or a quote is its own
+    /// paragraph even without a blank line around it.
     public static func split(_ rawText: String) -> Result {
         let text = TextIntake.clean(rawText)
 
@@ -33,33 +43,34 @@ public enum SentenceSplitter {
         var sentences: [Sentence] = []
         var globalIndex = 0
 
-        for (pIndex, chunk) in paragraphChunks(in: text).enumerated() {
-            let sentenceTexts = sentenceTexts(in: chunk)
+        for block in MarkdownIntake.blocks(from: text) {
+            let sentenceTexts = sentenceTexts(in: block.text)
             guard !sentenceTexts.isEmpty else { continue }
 
+            // Each sentence takes its share of the block's styles, located the same way the
+            // speech highlight locates it.
+            let starts = SpokenRange.sentenceStarts(in: block.text, sentences: sentenceTexts)
+
             var ids: [UUID] = []
-            for t in sentenceTexts {
-                let s = Sentence(index: globalIndex, paragraphIndex: paragraphs.count, text: t)
+            for (t, start) in zip(sentenceTexts, starts) {
+                let styles = InlineStyle.clip(block.styles, to: start, length: t.utf16.count)
+                let s = Sentence(
+                    index: globalIndex, paragraphIndex: paragraphs.count, text: t,
+                    styles: styles.isEmpty ? nil : styles
+                )
                 sentences.append(s)
                 ids.append(s.id)
                 globalIndex += 1
             }
-            _ = pIndex
             paragraphs.append(
-                Paragraph(index: paragraphs.count, text: chunk, sentenceIDs: ids)
+                Paragraph(
+                    index: paragraphs.count, text: block.text, sentenceIDs: ids,
+                    styles: block.styles.isEmpty ? nil : block.styles, block: block.style
+                )
             )
         }
 
         return Result(paragraphs: paragraphs, sentences: sentences)
-    }
-
-    /// Blank-line separated chunks, trimmed, empties dropped.
-    static func paragraphChunks(in text: String) -> [String] {
-        text
-            .components(separatedBy: "\n\n")
-            .flatMap { $0.split(separator: "\n", omittingEmptySubsequences: false).isEmpty ? [$0] : [$0] }
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
     }
 
     /// Sentences within one paragraph.

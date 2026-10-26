@@ -56,6 +56,10 @@ public final class AppModel {
         public var verdict: AudioQualityVerdict?
         public var problemWords: [String]
         public var heardText: String?
+        /// Markdown formatting over `text`, and the block it sits in. A sentence row
+        /// carries its paragraph's block, but only the first sentence keeps a list marker.
+        public var styles: [InlineStyle] = []
+        public var block: BlockStyle?
     }
 
     public init(settings: Settings = Settings()) {
@@ -713,10 +717,27 @@ public final class AppModel {
                 hasMissingAudio: takes.contains { !loaded.hasAudio($0) },
                 verdict: takes.first?.score?.verdict,
                 problemWords: best?.score?.problemWords ?? [],
-                heardText: takes.first?.score?.transcript
+                heardText: takes.first?.score?.transcript,
+                styles: loaded.passage.styles(for: ref),
+                block: block(for: ref, in: loaded.passage)
             )
         }
         rowSummaries = out
+    }
+
+    private func block(for ref: TargetRef, in passage: Passage) -> BlockStyle? {
+        switch ref.kind {
+        case .paragraph:
+            return passage.paragraph(id: ref.id)?.block
+        case .sentence:
+            guard let s = passage.sentence(id: ref.id),
+                  passage.paragraphs.indices.contains(s.paragraphIndex),
+                  var block = passage.paragraphs[s.paragraphIndex].block else { return nil }
+            if passage.paragraphs[s.paragraphIndex].sentenceIDs.first != s.id { block.marker = nil }
+            return block
+        case .passage:
+            return nil
+        }
     }
 
     /// Targets for the current granularity, in reading order.

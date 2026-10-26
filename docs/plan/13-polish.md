@@ -87,6 +87,33 @@ The sheet focuses the text box on open, so ⌘N then ⌘V is the whole gesture. 
 moved to `AppModel.isComposingPassage`, because three places now open it. "Nothing selected"
 also offers "New passage", so the detail pane is never a dead end.
 
+**2026-10-25 — markdown renders.**
+
+Pasted markdown showed its markup: `**`, `#` and `- ` sat in the text, where the voice read
+them, the scorer counted them, and every highlight after one drifted by its width. Now every
+paste goes through `MarkdownIntake`, built on Foundation's own parser, and markup never
+reaches the text. What is stored is the plain text plus `InlineStyle` ranges over it (bold,
+italic, code, strikethrough, links) and a `BlockStyle` per paragraph (heading, list item with
+its marker and depth, quote). Rows draw the styles back on over exactly the characters that
+are spoken, so the speech highlight still lands on the word -- checked by rendering the row
+with `ImageRenderer`, the highlight sitting exactly on a bold word.
+
+Plain prose is valid markdown and comes out unchanged; all 273 earlier tests passed
+untouched. Three choices worth knowing:
+
+- A single newline stays a newline rather than folding to a space, so a poem keeps its lines.
+- A code block is an ordinary paragraph. Four spaces of indentation make one, and prose
+  pasted from a PDF would otherwise land in a monospaced box.
+- An ordered list keeps its number as written, so "2020. A hard year." shows "2020." beside
+  the item rather than losing the year.
+
+The new fields are optional, so passages saved earlier decode unchanged and plain prose
+writes the same JSON as before. Existing passages are **not** re-parsed: re-splitting mints new
+sentence ids and would orphan their takes, the same reason editing is out of scope. Three in
+the library contain markdown -- one with a take -- and show their markup until re-added.
+
+An opening `# Heading` is offered as the title, and used when the title is left empty.
+
 ## Goal
 
 Make the app feel finished and calm. The user reviewed three mockups, chose the native Mac

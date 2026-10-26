@@ -53,9 +53,11 @@ struct SentenceRowView: View {
 
     private var text: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(highlighted)
-                .font(.system(size: 15))
-                .lineSpacing(4)
+            blockFrame(
+                Text(highlighted)
+                    .font(.system(size: fontSize, weight: isHeading ? .semibold : .regular))
+                    .lineSpacing(4)
+            )
             // Paragraph and whole rows show their sentences dimmed inside, which is the
             // only difference between the three granularities.
             if !nestedSentences.isEmpty {
@@ -65,6 +67,38 @@ struct SentenceRowView: View {
                         .foregroundStyle(.tertiary)
                 }
             }
+        }
+    }
+
+    private var isHeading: Bool { summary.block?.kind == .heading }
+
+    private var fontSize: CGFloat {
+        isHeading ? Styling.headingSize(summary.block?.level ?? 1) : 15
+    }
+
+    /// The markdown block around the text: a marker and indent for a list item, a rule
+    /// down the left for a quote. Markers sit outside the text, never in it, because the
+    /// text is what gets spoken and scored.
+    @ViewBuilder
+    private func blockFrame(_ content: some View) -> some View {
+        switch summary.block?.kind {
+        case .listItem:
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(summary.block?.marker ?? "")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 26, alignment: .trailing)
+                content
+            }
+            .padding(.leading, CGFloat(max((summary.block?.level ?? 1) - 1, 0)) * 22)
+        case .quote:
+            content
+                .padding(.leading, 14)
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(Styling.rule).frame(width: 3)
+                }
+        default:
+            content
         }
     }
 
@@ -100,8 +134,10 @@ struct SentenceRowView: View {
     /// array — that drifts on any accented character or emoji. A voice that emits no ranges
     /// is a supported case: the whole sentence highlights instead of nothing.
     private var highlighted: AttributedString {
-        var out = AttributedString(summary.text)
-        out.foregroundColor = summary.takeCount > 0 || isActive ? .primary : .secondary
+        var out = Styling.formatted(
+            summary.text, styles: summary.styles,
+            color: summary.takeCount > 0 || isActive ? .primary : .secondary
+        )
         guard isSpeaking else { return out }
         guard let r = spokenRange,
               let swiftRange = SpokenRange.range(

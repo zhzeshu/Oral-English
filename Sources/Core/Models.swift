@@ -38,17 +38,86 @@ public struct TargetRef: Codable, Sendable, Hashable, Identifiable {
 
 // MARK: - Passage structure
 
+/// Inline formatting from a markdown paste, laid over plain text.
+///
+/// Offsets are UTF-16 units into the `text` of whatever owns the style, the same units the
+/// speech highlight uses. The text itself stays plain: it is what the voice reads, what the
+/// scorer compares against and what the highlight indexes into, and `**` in any of those
+/// would be read aloud, scored as a word, or shift every highlight after it.
+public struct InlineStyle: Codable, Sendable, Hashable {
+    public enum Kind: String, Codable, Sendable, Hashable {
+        case strong, emphasis, code, strikethrough, link
+    }
+
+    public var kind: Kind
+    public var location: Int
+    public var length: Int
+    /// Only for `.link`.
+    public var url: String?
+
+    public init(kind: Kind, location: Int, length: Int, url: String? = nil) {
+        self.kind = kind
+        self.location = location
+        self.length = length
+        self.url = url
+    }
+
+    /// The part of `styles` that falls inside `location ..< location + length`, rebased so
+    /// the window starts at zero. Used to give each sentence its share of its paragraph's
+    /// styles, and to place paragraph styles inside the whole-passage text.
+    public static func clip(_ styles: [InlineStyle], to location: Int, length: Int) -> [InlineStyle] {
+        let end = location + length
+        return styles.compactMap { s in
+            let lo = max(s.location, location)
+            let hi = min(s.location + s.length, end)
+            guard hi > lo else { return nil }
+            return InlineStyle(kind: s.kind, location: lo - location, length: hi - lo, url: s.url)
+        }
+    }
+
+    /// `styles` moved `offset` units later, for text placed after other text.
+    public static func shift(_ styles: [InlineStyle], by offset: Int) -> [InlineStyle] {
+        styles.map { InlineStyle(kind: $0.kind, location: $0.location + offset, length: $0.length, url: $0.url) }
+    }
+}
+
+/// What kind of markdown block a paragraph came from. Absent for an ordinary paragraph,
+/// which is everything pasted as plain prose.
+public struct BlockStyle: Codable, Sendable, Hashable {
+    public enum Kind: String, Codable, Sendable, Hashable {
+        case heading, listItem, quote
+    }
+
+    public var kind: Kind
+    /// Heading level from 1, or list nesting depth from 1.
+    public var level: Int
+    /// The list marker as written to the left of the item -- "•" or "3." -- and nil for a
+    /// second paragraph inside the same item, which is indented but carries no marker.
+    public var marker: String?
+
+    public init(kind: Kind, level: Int = 1, marker: String? = nil) {
+        self.kind = kind
+        self.level = level
+        self.marker = marker
+    }
+}
+
 public struct Sentence: Codable, Sendable, Identifiable, Hashable {
     public var id: UUID
     public var index: Int
     public var paragraphIndex: Int
     public var text: String
+    /// Inline formatting over `text`. Optional so passages saved before markdown support
+    /// decode unchanged; nil rather than empty when there is none, which keeps the JSON as
+    /// it was for plain prose.
+    public var styles: [InlineStyle]?
 
-    public init(id: UUID = UUID(), index: Int, paragraphIndex: Int, text: String) {
+    public init(id: UUID = UUID(), index: Int, paragraphIndex: Int, text: String, styles: [InlineStyle]? = nil) {
         self.id = id
         self.index = index
         self.paragraphIndex = paragraphIndex
         self.text = text
+        self.styles = styles
     }
 }
 
@@ -57,12 +126,21 @@ public struct Paragraph: Codable, Sendable, Identifiable, Hashable {
     public var index: Int
     public var text: String
     public var sentenceIDs: [UUID]
+    /// Inline formatting over `text`, and the markdown block it came from. Both optional,
+    /// for the same reason as `Sentence.styles`.
+    public var styles: [InlineStyle]?
+    public var block: BlockStyle?
 
-    public init(id: UUID = UUID(), index: Int, text: String, sentenceIDs: [UUID]) {
+    public init(
+        id: UUID = UUID(), index: Int, text: String, sentenceIDs: [UUID],
+        styles: [InlineStyle]? = nil, block: BlockStyle? = nil
+    ) {
         self.id = id
         self.index = index
         self.text = text
         self.sentenceIDs = sentenceIDs
+        self.styles = styles
+        self.block = block
     }
 }
 
@@ -114,6 +192,24 @@ public struct Passage: Codable, Sendable, Identifiable, Hashable {
         case .sentence: return sentence(id: ref.id)?.text
         case .paragraph: return paragraph(id: ref.id)?.text
         case .passage: return ref.id == id ? paragraphs.map(\.text).joined(separator: "\n\n") : nil
+        }
+    }
+
+    /// Inline formatting over `text(for:)`, in the same offsets. The whole passage places
+    /// each paragraph's styles after the paragraphs and blank-line separators before it.
+    public func styles(for ref: TargetRef) -> [InlineStyle] {
+        switch ref.kind {
+        case .sentence: return sentence(id: ref.id)?.styles ?? []
+        case .paragraph: return paragraph(id: ref.id)?.styles ?? []
+        case .passage:
+            guard ref.id == id else { return [] }
+            var out: [InlineStyle] = []
+            var offset = 0
+            for p in paragraphs {
+                out += InlineStyle.shift(p.styles ?? [], by: offset)
+                offset += p.text.utf16.count + 2  // the "\n\n" joining paragraphs
+            }
+            return out
         }
     }
 

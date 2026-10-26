@@ -26,6 +26,17 @@ DEPLOY="$HOME/Applications/$APP_NAME.app"
 STAGE="build/$APP_NAME.app"
 TARGET="arm64-apple-macos26.0"
 SDK="${ORAL_SDK:-$(xcrun --show-sdk-path)}"
+# Command Line Tools 27 made the macOS 27 SDK the default. There, SwiftUI's @State is a
+# macro, and the SwiftUIMacros compiler plugin that expands it ships with Xcode, not with
+# Command Line Tools -- so every @State fails with "plugin for module 'SwiftUIMacros' not
+# found". The same install keeps the 26 SDK, which is what this app targets anyway.
+if [ -z "${ORAL_SDK:-}" ]; then
+    PLUGINS="$(dirname "$(xcrun -f swiftc)")/../lib/swift/host/plugins"
+    SDK26="$(dirname "$SDK")/MacOSX26.sdk"
+    if ! ls "$PLUGINS"/libSwiftUIMacros* >/dev/null 2>&1 && [ -d "$SDK26" ]; then
+        SDK="$SDK26"
+    fi
+fi
 # Prefer the hash recorded by make-cert.sh: signing by hash cannot be ambiguous.
 if [ -z "${ORAL_SIGN_ID:-}" ] && [ -f .signing-identity ]; then
     SIGN_ID="$(cat .signing-identity)"
@@ -89,7 +100,7 @@ fi
 # the moment of the edit rather than as a link error several work items later.
 ./scripts/check-core-imports.sh
 
-echo "sdk: $SDK ($(xcrun --show-sdk-version))"
+echo "sdk: $SDK"
 
 swiftc -parse-as-library "$OPT" \
     -target "$TARGET" -sdk "$SDK" \

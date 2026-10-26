@@ -86,6 +86,51 @@ enum Styling {
         return f
     }()
 
+    /// Plain text with its markdown formatting drawn back on.
+    ///
+    /// Through intents rather than fonts, so bold and italic compose with each other and
+    /// with whatever size the row uses -- a bold word in a heading stays heading-sized.
+    /// The characters are exactly `text`, which is what keeps the speech highlight, built
+    /// from offsets into the same string, landing on the word being spoken.
+    static func formatted(_ text: String, styles: [InlineStyle], color: Color) -> AttributedString {
+        var out = AttributedString(text)
+        out.foregroundColor = color
+        for style in styles {
+            guard let r = SpokenRange.range(in: text, utf16Location: style.location, utf16Length: style.length),
+                  let range = Range(r, in: out) else { continue }
+            switch style.kind {
+            case .strong: addIntent(.stronglyEmphasized, to: range, in: &out)
+            case .emphasis: addIntent(.emphasized, to: range, in: &out)
+            case .code: addIntent(.code, to: range, in: &out)
+            case .strikethrough: addIntent(.strikethrough, to: range, in: &out)
+            case .link:
+                // A link is pressable, so it takes the accent, like everything else that is.
+                out[range].link = style.url.flatMap(URL.init(string:))
+                out[range].foregroundColor = accent
+            }
+        }
+        return out
+    }
+
+    /// Unions rather than assigns, so a word both bold and italic keeps both.
+    private static func addIntent(
+        _ intent: InlinePresentationIntent, to range: Range<AttributedString.Index>, in out: inout AttributedString
+    ) {
+        let pieces = out[range].runs.map { ($0.range, $0.inlinePresentationIntent ?? []) }
+        for (r, existing) in pieces {
+            out[r].inlinePresentationIntent = existing.union(intent)
+        }
+    }
+
+    /// Row text size for a markdown heading, stepping down to body size by level four.
+    static func headingSize(_ level: Int) -> CGFloat {
+        switch level {
+        case 1: return 21
+        case 2: return 18
+        default: return 16
+        }
+    }
+
     /// The word diff as one attributed string, which wraps natively and needs no custom
     /// layout. Matched words read as ordinary muted text; close misses are amber; wrong or
     /// dropped words are red. No underlines, no strikethrough, no italics — color alone

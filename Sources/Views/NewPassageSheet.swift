@@ -23,7 +23,9 @@ struct NewPassageSheet: View {
                 .font(.system(size: 17, weight: .medium))
 
             HStack(spacing: 10) {
-                TextField("Title", text: $title)
+                // An opening markdown heading is offered as the title, and used if the
+                // field is left empty.
+                TextField("Title", text: $title, prompt: Text(preview?.suggestedTitle ?? "Title"))
                 TextField("Theme (optional)", text: $theme)
                     .frame(width: 170)
             }
@@ -54,7 +56,7 @@ struct NewPassageSheet: View {
                     if text.isEmpty {
                         // The editor's own padding plus the text view's 5pt line-fragment
                         // padding, so the placeholder sits where the first character will.
-                        Text("Paste an English paragraph")
+                        Text("Paste an English paragraph. Markdown is fine.")
                             .font(.system(size: 13))
                             .foregroundStyle(.tertiary)
                             .padding(.top, 8)
@@ -82,7 +84,9 @@ struct NewPassageSheet: View {
                 Button("Add passage") {
                     Task {
                         await model.createPassage(
-                            title: title.isEmpty ? "Untitled" : title,
+                            title: title.isEmpty
+                                ? (SentenceSplitter.split(text).suggestedTitle ?? "Untitled")
+                                : title,
                             theme: theme.isEmpty ? nil : theme,
                             text: text
                         )

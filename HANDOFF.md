@@ -212,6 +212,10 @@ they are the things a fresh session would otherwise rediscover.
     convert the result back to an iconset and count the PNGs, which `make-icon.sh` does.
     Relatedly, an `.icns` in `Resources/` does nothing without `CFBundleIconFile` in the
     plist — the file is copied and silently ignored. (Item 01)
+19. **Command Line Tools 27 broke every `@State`.** The update made the macOS 27 SDK the
+   default, where `@State` is a macro whose `SwiftUIMacros` plugin ships only with Xcode:
+   "plugin for module 'SwiftUIMacros' not found". `build.sh` now falls back to the 26 SDK the
+   same install keeps; `ORAL_SDK` still overrides. (Item 13, 2026-10-25)
 
 ## Architecture, in one screen
 
