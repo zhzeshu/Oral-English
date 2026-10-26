@@ -56,3 +56,7 @@ decisions behind the design, the verified facts about this machine, and how test
 
 The plan is at revision 2, rewritten after an adversarial review recorded in
 [grill-report-2026-09-14.md](grill-report-2026-09-14.md).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
