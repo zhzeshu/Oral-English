@@ -4,7 +4,6 @@ import SwiftUI
 /// paragraph labels, separated by whitespace alone.
 struct PassageDetailView: View {
     @Environment(AppModel.self) private var model
-    @Binding var showingNewPassage: Bool
     @State private var renaming = false
     @State private var newTitle = ""
     @State private var historyTarget: TargetRef?
@@ -20,13 +19,16 @@ struct PassageDetailView: View {
             } description: {
                 Text("Paste an English paragraph and it will be split into sentences.")
             } actions: {
-                Button("Paste a paragraph") { showingNewPassage = true }
+                Button("Paste a paragraph") { model.composePassage() }
+                    .buttonStyle(.borderedProminent)
             }
         } else {
             ContentUnavailableView {
                 Text("Nothing selected")
             } description: {
-                Text("Choose a passage on the left.")
+                Text("Choose a passage on the left, or start a new one.")
+            } actions: {
+                Button("New passage") { model.composePassage() }
             }
         }
     }

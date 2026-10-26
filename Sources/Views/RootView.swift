@@ -2,11 +2,11 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
-    @State private var showingNewPassage = false
 
     var body: some View {
+        @Bindable var model = model
         NavigationSplitView {
-            LibrarySidebarView(showingNewPassage: $showingNewPassage)
+            LibrarySidebarView()
         } detail: {
             VStack(spacing: 0) {
                 if let kind = model.banner {
@@ -16,18 +16,30 @@ struct RootView: View {
                         onDismiss: { dismissBannerIfAllowed(kind) }
                     )
                 }
-                PassageDetailView(showingNewPassage: $showingNewPassage)
+                PassageDetailView()
             }
             .background(Styling.canvas)
         }
         .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 280)
+        // In the window toolbar, always visible. It was a small grey row pinned to the
+        // sidebar's bottom-left corner, the last place anyone looks for the first thing
+        // they do. On the split view rather than the sidebar column: declared on the
+        // sidebar, macOS 26 folds it into the toolbar's overflow menu.
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { model.composePassage() } label: {
+                    Label("New Passage", systemImage: "square.and.pencil")
+                }
+                .help("New passage (⌘N). ⇧⌘V starts one from the clipboard.")
+            }
+        }
         // Light, always. The app inherited the system appearance, and on a Mac set to dark
         // that made the page you read from near-black. Pinning it is a deliberate product
         // decision rather than an oversight: this is a reading surface, and it should look
         // like paper under every system setting.
         .preferredColorScheme(.light)
         .tint(Styling.accent)
-        .sheet(isPresented: $showingNewPassage) { NewPassageSheet() }
+        .sheet(isPresented: $model.isComposingPassage) { NewPassageSheet() }
         .task { await model.bootstrap() }
         // A second instance cannot share the library safely, so it says why and quits
         // rather than sitting there with a dead window. Two instances against one library

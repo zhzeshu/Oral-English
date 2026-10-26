@@ -31,6 +31,11 @@ public final class AppModel {
     public var banner: BannerKind?
     public var errorMessage: String?
     public var isAnotherInstanceRunning = false
+    /// The new-passage sheet is open. Here rather than in a view, because it is opened from
+    /// the toolbar, the File menu and the empty state alike.
+    public var isComposingPassage = false
+    /// Text the sheet opens with, consumed once on appear. Empty for a blank sheet.
+    public var composeSeed = ""
     public var libraryIsSynced = false
     /// True while the speech model download is running, so the banner can say so.
     public private(set) var isInstallingSpeechModel = false
@@ -598,6 +603,13 @@ public final class AppModel {
     }
 
     // MARK: - Intents
+
+    /// Opens the new-passage sheet, optionally already holding the text to practice.
+    public func composePassage(seed: String = "") {
+        guard !isComposingPassage else { return }
+        composeSeed = seed
+        isComposingPassage = true
+    }
 
     public func createPassage(title: String, theme: String?, text: String) async {
         do {

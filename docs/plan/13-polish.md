@@ -61,6 +61,32 @@ Not a bug, but worth recording because it looks like one: the window restores to
 last was, and on a two-display Mac that can be the display you are not looking at. The app
 opens and appears to do nothing.
 
+**2026-10-20 — the paste sheet rendered wrong, and adding a passage was hard to find.**
+
+**The paste box.** `preferredColorScheme(.light)` pins the main window only. A sheet is a
+window of its own, and the `TextEditor` inside it is an `NSTextView` that draws with its
+window's appearance, so on a Mac set to dark it rendered dark inside a light sheet.
+`AppLifecycle` now sets `NSApp.appearance` to aqua, which covers sheets, popovers and alerts
+in one place. The editor is also drawn as a field explicitly -- white, bordered, padded, on
+the canvas -- because left to AppKit it was an unbordered rectangle that did not read as
+somewhere to paste.
+
+**Finding "new".** The only way in was a small grey row pinned to the sidebar's bottom-left
+corner. Now there are three, and the corner row is gone:
+
+- A `square.and.pencil` button in the window toolbar, always visible. Declared on the split
+  view rather than the sidebar column, because declared on the sidebar macOS 26 folds it
+  into the toolbar's overflow menu -- which was checked through the accessibility tree, not
+  assumed.
+- File > New Passage… (⌘N). The File menu had been emptied, so ⌘N lived only on that corner
+  button.
+- File > New Passage from Clipboard (⇧⌘V), which opens the sheet already holding the text.
+  Copy a paragraph from anywhere, then one keystroke.
+
+The sheet focuses the text box on open, so ⌘N then ⌘V is the whole gesture. Opening state
+moved to `AppModel.isComposingPassage`, because three places now open it. "Nothing selected"
+also offers "New passage", so the detail pane is never a dead end.
+
 ## Goal
 
 Make the app feel finished and calm. The user reviewed three mockups, chose the native Mac

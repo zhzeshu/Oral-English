@@ -15,6 +15,7 @@ struct NewPassageSheet: View {
     @State private var text = ""
     @State private var preview: SentenceSplitter.Result?
     @State private var debounceTask: Task<Void, Never>?
+    @FocusState private var editorFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -39,16 +40,25 @@ struct NewPassageSheet: View {
                 }
             }
 
+            // Drawn as a field explicitly. Left to AppKit, the editor is an unbordered
+            // rectangle that does not read as somewhere to paste.
             TextEditor(text: $text)
                 .font(.system(size: 13))
+                .focused($editorFocused)
+                .scrollContentBackground(.hidden)
+                .padding(8)
                 .frame(minHeight: 200)
+                .background(Styling.surface, in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Styling.rule))
                 .overlay(alignment: .topLeading) {
                     if text.isEmpty {
+                        // The editor's own padding plus the text view's 5pt line-fragment
+                        // padding, so the placeholder sits where the first character will.
                         Text("Paste an English paragraph")
                             .font(.system(size: 13))
                             .foregroundStyle(.tertiary)
                             .padding(.top, 8)
-                            .padding(.leading, 5)
+                            .padding(.leading, 13)
                             .allowsHitTesting(false)
                     }
                 }
@@ -85,6 +95,19 @@ struct NewPassageSheet: View {
         }
         .padding(20)
         .frame(width: 620)
+        // The text is the one required field, so the cursor starts there: ⌘N then ⌘V is
+        // the whole gesture. A seed from "New Passage from Clipboard" arrives already
+        // pasted, with its preview computed rather than waiting out the debounce.
+        .onAppear {
+            if !model.composeSeed.isEmpty {
+                text = model.composeSeed
+                preview = SentenceSplitter.split(text)
+                model.composeSeed = ""
+            }
+            editorFocused = true
+        }
+        // The same paper as the main window, so the white field stands out from it.
+        .background(Styling.canvas)
     }
 
     @ViewBuilder

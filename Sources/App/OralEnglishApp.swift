@@ -18,6 +18,16 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
     /// lock explicitly rather than relying on the file descriptor dying with the process.
     static var willTerminate: (@MainActor () -> Void)?
 
+    /// Light, for every window -- not just the main one. `preferredColorScheme` on the root
+    /// view pins the main window, but a sheet is a window of its own, and AppKit-backed
+    /// controls inside it draw with the window's appearance rather than SwiftUI's color
+    /// scheme. On a Mac set to dark, that left the paste sheet's `TextEditor` (an
+    /// `NSTextView` underneath) drawn dark inside an otherwise light sheet. Pinning the
+    /// application appearance covers sheets, popovers and alerts in one place.
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NSApp.appearance = NSAppearance(named: .aqua)
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
     }
@@ -52,7 +62,17 @@ struct OralEnglishApp: App {
         .defaultSize(width: 1100, height: 720)
         .windowToolbarStyle(.unified)
         .commands {
-            CommandGroup(replacing: .newItem) {}
+            // File > New, where every Mac user looks first. The window itself is not
+            // a document, so "New" makes a passage rather than another window.
+            CommandGroup(replacing: .newItem) {
+                Button("New Passage…") { model.composePassage() }
+                    .keyboardShortcut("n", modifiers: .command)
+                // The usual way in: copy a paragraph from anywhere, then one keystroke.
+                Button("New Passage from Clipboard") {
+                    model.composePassage(seed: Workspace.clipboardText() ?? "")
+                }
+                .keyboardShortcut("v", modifiers: [.command, .shift])
+            }
             // A menu item rather than a hidden shortcut on a view: the empty state has
             // advertised "⌘R — record" since the first screen was built, and until now it
             // was bound to nothing at all.

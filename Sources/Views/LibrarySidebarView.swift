@@ -3,7 +3,6 @@ import SwiftUI
 /// A plain list under small theme headings. No counts, no rings, no progress bars.
 struct LibrarySidebarView: View {
     @Environment(AppModel.self) private var model
-    @Binding var showingNewPassage: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -12,8 +11,6 @@ struct LibrarySidebarView: View {
             } else {
                 list
             }
-            Divider()
-            newPassageButton
         }
         .frame(minWidth: 180)
     }
@@ -92,23 +89,5 @@ struct LibrarySidebarView: View {
                 .foregroundStyle(.secondary)
             Spacer()
         }
-    }
-
-    private var newPassageButton: some View {
-        Button {
-            showingNewPassage = true
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "plus").font(.system(size: 11))
-                Text("New passage").font(.system(size: 11))
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .keyboardShortcut("n", modifiers: .command)
     }
 }

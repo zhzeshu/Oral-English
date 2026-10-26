@@ -8,6 +8,14 @@ public enum Workspace {
         NSApplication.shared.terminate(nil)
     }
 
+    /// Plain text on the clipboard, or nil when there is none worth starting a passage from.
+    @MainActor
+    public static func clipboardText() -> String? {
+        guard let s = NSPasteboard.general.string(forType: .string),
+              !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return s
+    }
+
     public static func reveal(_ url: URL) {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
