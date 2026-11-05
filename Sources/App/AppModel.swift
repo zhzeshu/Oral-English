@@ -36,6 +36,8 @@ public final class AppModel {
     public var isComposingPassage = false
     /// Text the sheet opens with, consumed once on appear. Empty for a blank sheet.
     public var composeSeed = ""
+    /// The same sheet, opened on the selected passage to revise its text.
+    public var isEditingPassage = false
     public var libraryIsSynced = false
     /// True while the speech model download is running, so the banner can say so.
     public private(set) var isInstallingSpeechModel = false
@@ -658,6 +660,45 @@ public final class AppModel {
         }
     }
 
+    /// Editing re-splits the text, so it waits for audio to finish: a take stopped against
+    /// a sentence that no longer exists would have nowhere to go.
+    public var canEditPassage: Bool {
+        loaded != nil && practice.recordingTarget == nil && practice.audio.isIdle && pendingTake == nil
+    }
+
+    public func editPassage() {
+        guard canEditPassage, !isComposingPassage else { return }
+        isEditingPassage = true
+    }
+
+    /// What saving `text` would do to the selected passage, for the sheet's live summary.
+    public func revisionPreview(text: String) -> (revision: PassageRevision, orphanedTakes: Int)? {
+        guard let loaded else { return nil }
+        let r = PassageRevision(from: loaded.passage, to: text)
+        return (r, r.orphanedTakes(loaded.takes).count)
+    }
+
+    public func revise(title: String, theme: String?, text: String) async {
+        guard let folder = selectedFolder, canEditPassage else { return }
+        let keepSelected = selectedTarget
+        let keepExpanded = expandedTarget
+        do {
+            let newFolder = try await store.revise(folderName: folder, title: title, theme: theme, text: text)
+                .folderName
+            await reloadSummaries()
+            await select(folderName: newFolder)
+            // Keep the row the user was on, if its sentence survived the edit.
+            let targets = Set(loaded?.passage.allTargets ?? [])
+            selectedTarget = keepSelected.flatMap { targets.contains($0) ? $0 : nil }
+            expandedTarget = keepExpanded.flatMap { targets.contains($0) ? $0 : nil }
+        } catch let f as AppFailure {
+            Log.failure(Log.store, f, context: "revise")
+            errorMessage = f.userMessage
+        } catch {
+            Log.unexpected(Log.store, error, context: "revise")
+        }
+    }
+
     public func rename(to newTitle: String) async {
         guard let folder = selectedFolder else { return }
         do {
@@ -710,14 +751,16 @@ public final class AppModel {
             guard let text = loaded.passage.text(for: ref) else { continue }
             let takes = loaded.takes(for: ref)
             let best = loaded.bestTake(for: ref)
+            // What was heard last time only means something against the words shown now.
+            let latest = takes.first { loaded.isCurrentWording($0) }
             out[ref] = RowSummary(
                 text: text,
                 bestAccuracy: best?.score?.accuracy,
                 takeCount: takes.count,
                 hasMissingAudio: takes.contains { !loaded.hasAudio($0) },
-                verdict: takes.first?.score?.verdict,
+                verdict: latest?.score?.verdict,
                 problemWords: best?.score?.problemWords ?? [],
-                heardText: takes.first?.score?.transcript,
+                heardText: latest?.score?.transcript,
                 styles: loaded.passage.styles(for: ref),
                 block: block(for: ref, in: loaded.passage)
             )

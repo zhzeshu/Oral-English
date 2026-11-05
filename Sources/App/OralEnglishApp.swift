@@ -73,6 +73,13 @@ struct OralEnglishApp: App {
                 }
                 .keyboardShortcut("v", modifiers: [.command, .shift])
             }
+            // Edit > after the pasteboard items: revising the passage's own text.
+            CommandGroup(after: .pasteboard) {
+                Divider()
+                Button("Edit Passage Text…") { model.editPassage() }
+                    .keyboardShortcut("e", modifiers: .command)
+                    .disabled(!model.canEditPassage)
+            }
             // A menu item rather than a hidden shortcut on a view: the empty state has
             // advertised "⌘R — record" since the first screen was built, and until now it
             // was bound to nothing at all.

@@ -146,6 +146,8 @@ struct PassageDetailView: View {
 
     private func menu(_ loaded: LoadedPassage) -> some View {
         Menu {
+            Button("Edit Text…") { model.editPassage() }
+                .disabled(!model.canEditPassage)
             Button("Rename…") {
                 newTitle = loaded.passage.title
                 renaming = true
@@ -178,6 +180,7 @@ struct PassageDetailView: View {
                 Text("⌘P — play my take")
                 Text("⌘B — compare")
                 Text("⌘↓ — next sentence")
+                Text("⌘E — edit text")
             }
             Divider()
             Button("Move to Trash", role: .destructive) {

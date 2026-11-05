@@ -40,6 +40,7 @@ struct RootView: View {
         .preferredColorScheme(.light)
         .tint(Styling.accent)
         .sheet(isPresented: $model.isComposingPassage) { NewPassageSheet() }
+        .sheet(isPresented: $model.isEditingPassage) { NewPassageSheet(isEditing: true) }
         .task { await model.bootstrap() }
         // A second instance cannot share the library safely, so it says why and quits
         // rather than sitting there with a dead window. Two instances against one library

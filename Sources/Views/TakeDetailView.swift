@@ -77,6 +77,12 @@ struct TakeDetailView: View {
                     if take.score == nil {
                         Text("· not scored")
                     }
+                    // Recorded before the passage text was revised. Kept, playable and
+                    // scored against its own words, but not eligible as best.
+                    if !isCurrentWording(take) {
+                        Text("· earlier wording")
+                            .help(take.referenceText)
+                    }
                 }
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
@@ -128,6 +134,10 @@ struct TakeDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
+    }
+
+    private func isCurrentWording(_ take: Take) -> Bool {
+        model.loaded?.isCurrentWording(take) ?? true
     }
 
     private func hasAudio(_ take: Take) -> Bool {

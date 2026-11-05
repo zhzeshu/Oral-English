@@ -132,7 +132,8 @@ public actor PassageStore {
                 id: passage.id, folderName: folderName,
                 title: passage.title, theme: passage.theme,
                 createdAt: passage.createdAt, updatedAt: passage.updatedAt,
-                sentenceCount: passage.sentences.count, takeCount: takes.count,
+                // Takes on a sentence a revision removed stay on disk but are not shown.
+                sentenceCount: passage.sentences.count, takeCount: takes.count - loaded.orphanedTakes.count,
                 averageBestAccuracy: bests.isEmpty ? nil : bests.reduce(0, +) / Double(bests.count)
             )
         } catch let f as AppFailure {
@@ -280,6 +281,43 @@ public actor PassageStore {
         }
         try writePassage(loaded.passage, folderName: newFolder)
         return newFolder
+    }
+
+    /// Replaces the passage's text, title and theme, carrying sentence and paragraph ids
+    /// over so takes stay attached. See `PassageRevision` for the matching. Callers must
+    /// ensure no audio is in flight, as for `rename`.
+    ///
+    /// Takes on removed sentences are left in `takes/` untouched: recordings are only ever
+    /// deleted by the user.
+    ///
+    /// Reads `passage.json` fresh inside the actor and writes it directly, not through
+    /// `writePassage`, whose changed-underneath merge keeps only title and theme and would
+    /// silently drop the new text.
+    public func revise(folderName: String, title: String, theme: String?, text: String) throws -> LoadedPassage {
+        try ensureLibrary()
+        let current = try loadPassageOnly(folderName: folderName)
+        let revision = PassageRevision(from: current, to: text)
+        guard !revision.sentences.isEmpty else { throw AppFailure.cancelled }
+
+        var passage = revision.applied(to: current, at: Date())
+        passage.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        passage.theme = theme?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+
+        let newFolder = Paths.passageFolderName(
+            title: passage.title, theme: passage.theme, createdAt: passage.createdAt, id: passage.id
+        )
+        if newFolder != folderName {
+            do {
+                try fm.moveItem(at: folderURL(folderName), to: folderURL(newFolder))
+            } catch {
+                throw AppFailure.libraryUnavailable(path: folderURL(newFolder).path, underlying: error)
+            }
+            seenModificationDates[folderName] = nil
+        }
+        let url = Paths.passageJSON(in: folderURL(newFolder))
+        try writeAtomically(try PassageCoding.encoder().encode(passage), to: url)
+        seenModificationDates[newFolder] = modificationDate(of: url)
+        return try load(folderName: newFolder)
     }
 
     // MARK: - Takes

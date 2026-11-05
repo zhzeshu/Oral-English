@@ -451,9 +451,13 @@ public struct LoadedPassage: Sendable, Hashable {
     }
 
     /// Highest-accuracy take for a target, or nil when none has a score.
+    ///
+    /// Only takes recorded against the target's current wording count. A sentence keeps
+    /// its takes when the passage text is revised, but a score earned on different words
+    /// must not stand as the best score for the words on screen now.
     public func bestTake(for ref: TargetRef) -> Take? {
         takes
-            .filter { $0.target == ref }
+            .filter { $0.target == ref && isCurrentWording($0) }
             .compactMap { t -> (Take, Double)? in
                 guard let a = t.score?.accuracy, a.isFinite else { return nil }
                 return (t, a)
@@ -463,6 +467,19 @@ public struct LoadedPassage: Sendable, Hashable {
     }
 
     public func hasAudio(_ take: Take) -> Bool { !takesMissingAudio.contains(take.id) }
+
+    /// True when the take was recorded against the text its target reads now. False after
+    /// a revision changed that text, and false when the target no longer exists.
+    public func isCurrentWording(_ take: Take) -> Bool {
+        passage.text(for: take.target) == take.referenceText
+    }
+
+    /// Takes whose sentence or paragraph a revision removed. Their files stay on disk,
+    /// because recordings are only ever deleted by the user; the app just stops showing them.
+    public var orphanedTakes: [Take] {
+        let targets = Set(passage.allTargets)
+        return takes.filter { !targets.contains($0.target) }
+    }
 }
 
 /// Cheap sidebar row. Derived at scan time, never written to disk.

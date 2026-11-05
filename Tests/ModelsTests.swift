@@ -215,7 +215,7 @@ struct ModelsTests {
             var s = Self.sampleScore()
             s.accuracy = acc
             return Take(target: ref, recordedAt: Self.t0.addingTimeInterval(offset),
-                        audioPath: "a", durationSeconds: 1, referenceText: "x", score: s)
+                        audioPath: "a", durationSeconds: 1, referenceText: p.sentences[0].text, score: s)
         }
         let l = Self.loaded(withTakes: [scored(0.61, 0), scored(0.92, 10), scored(0.74, 20)], passage: p)
         #expect(l.bestTake(for: ref)?.score?.accuracy == 0.92)
@@ -226,7 +226,7 @@ struct ModelsTests {
         let p = Self.samplePassage()
         let ref = TargetRef.sentence(p.sentences[0].id)
         #expect(Self.loaded(withTakes: [], passage: p).bestTake(for: ref) == nil)
-        let unscored = Take(target: ref, recordedAt: Self.t0, audioPath: "a", durationSeconds: 1, referenceText: "x")
+        let unscored = Take(target: ref, recordedAt: Self.t0, audioPath: "a", durationSeconds: 1, referenceText: p.sentences[0].text)
         #expect(Self.loaded(withTakes: [unscored], passage: p).bestTake(for: ref) == nil)
     }
 
@@ -240,10 +240,53 @@ struct ModelsTests {
         func withAccuracy(_ acc: Double) -> Take {
             var s = Self.sampleScore()
             s.accuracy = acc
-            return Take(target: ref, recordedAt: Self.t0, audioPath: "a", durationSeconds: 1, referenceText: "x", score: s)
+            return Take(target: ref, recordedAt: Self.t0, audioPath: "a", durationSeconds: 1, referenceText: p.sentences[0].text, score: s)
         }
         let l = Self.loaded(withTakes: [withAccuracy(.nan), withAccuracy(0.5), withAccuracy(.infinity)], passage: p)
         #expect(l.bestTake(for: ref)?.score?.accuracy == 0.5)
+    }
+
+    // MARK: - Earlier wording
+
+    /// After the passage text is revised, a sentence keeps its takes, but a 95% earned on
+    /// different words must not stand as the best score for the words on screen now.
+    @Test("bestTake ignores takes recorded against earlier wording")
+    func bestTakeIgnoresEarlierWording() {
+        let p = Self.samplePassage()
+        let ref = TargetRef.sentence(p.sentences[0].id)
+        func scored(_ acc: Double, _ text: String) -> Take {
+            var s = Self.sampleScore()
+            s.accuracy = acc
+            return Take(target: ref, recordedAt: Self.t0, audioPath: "a", durationSeconds: 1, referenceText: text, score: s)
+        }
+        let old = scored(0.95, "The fog rolled in.")
+        let current = scored(0.60, p.sentences[0].text)
+        #expect(Self.loaded(withTakes: [old, current], passage: p).bestTake(for: ref)?.id == current.id)
+        #expect(Self.loaded(withTakes: [old], passage: p).bestTake(for: ref) == nil)
+    }
+
+    @Test("isCurrentWording compares a take's reference text with its target's text now")
+    func isCurrentWording() {
+        let p = Self.samplePassage()
+        let s = TargetRef.sentence(p.sentences[0].id)
+        let whole = TargetRef.passage(p.id)
+        let l = Self.loaded(withTakes: [], passage: p)
+        func take(_ ref: TargetRef, _ text: String) -> Take {
+            Take(target: ref, recordedAt: Self.t0, audioPath: "a", durationSeconds: 1, referenceText: text)
+        }
+        #expect(l.isCurrentWording(take(s, p.sentences[0].text)))
+        #expect(!l.isCurrentWording(take(s, "The fog rolled in.")))
+        #expect(l.isCurrentWording(take(whole, p.text(for: whole)!)))
+        #expect(!l.isCurrentWording(take(.sentence(UUID()), p.sentences[0].text)), "a removed target has no current wording")
+    }
+
+    @Test("orphaned takes are the ones whose target is no longer in the passage")
+    func orphanedTakes() {
+        let p = Self.samplePassage()
+        let kept = Take(target: .sentence(p.sentences[0].id), recordedAt: Self.t0, audioPath: "a", durationSeconds: 1, referenceText: "x")
+        let gone = Take(target: .sentence(UUID()), recordedAt: Self.t0, audioPath: "b", durationSeconds: 1, referenceText: "x")
+        let l = Self.loaded(withTakes: [kept, gone], passage: p)
+        #expect(l.orphanedTakes.map(\.id) == [gone.id])
     }
 
     @Test("problem words list missed and substituted words, de-duplicated, in order")

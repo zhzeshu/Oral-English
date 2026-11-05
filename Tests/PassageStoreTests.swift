@@ -435,4 +435,95 @@ struct PassageStoreTests {
             #expect(summaries.first?.takeCount == 1)
         }
     }
+
+    // MARK: - Revising text
+
+    @Test("revising keeps takes attached to unchanged and edited sentences")
+    func reviseKeepsTakes() async throws {
+        try await withStore { store, _ in
+            let p = try await store.create(title: "T", theme: nil, text: Self.text)
+            let s0 = TargetRef.sentence(p.passage.sentences[0].id)
+            let s2 = TargetRef.sentence(p.passage.sentences[2].id)
+            _ = try await store.appendTake(makeTake(for: s0, accuracy: 0.8), to: p.folderName)
+            _ = try await store.appendTake(makeTake(for: s2, accuracy: 0.7), to: p.folderName)
+
+            let revised = Self.text.replacingOccurrences(of: "moved on", with: "drifted on")
+            let after = try await store.revise(folderName: p.folderName, title: "T", theme: nil, text: revised)
+
+            #expect(after.folderName == p.folderName)
+            #expect(after.passage.sourceText == revised)
+            #expect(after.passage.sentences[2].text == "Then it drifted on.")
+            #expect(after.takes(for: s0).count == 1)
+            #expect(after.takes(for: s2).count == 1, "the edited sentence keeps its take")
+            #expect(after.bestTake(for: s0)?.score?.accuracy == 0.8)
+            #expect(after.bestTake(for: s2) == nil, "its take was recorded against earlier wording")
+            #expect(after.passage.updatedAt >= p.passage.updatedAt)
+
+            let reloaded = try await store.load(folderName: p.folderName)
+            #expect(reloaded.passage == after.passage)
+        }
+    }
+
+    @Test("revising the title or theme renames the folder and keeps the takes")
+    func reviseRenames() async throws {
+        try await withStore { store, _ in
+            let p = try await store.create(title: "Old title", theme: nil, text: Self.text)
+            let s0 = TargetRef.sentence(p.passage.sentences[0].id)
+            _ = try await store.appendTake(makeTake(for: s0), to: p.folderName)
+
+            let after = try await store.revise(folderName: p.folderName, title: " New title ", theme: "Work", text: Self.text)
+            #expect(after.folderName != p.folderName)
+            #expect(after.passage.title == "New title")
+            #expect(after.passage.theme == "Work")
+            #expect(after.takes(for: s0).count == 1)
+            let names = try await store.scanSummaries().map(\.folderName)
+            #expect(names == [after.folderName])
+        }
+    }
+
+    @Test("revising to empty text throws and leaves the passage as it was")
+    func reviseRejectsEmpty() async throws {
+        try await withStore { store, _ in
+            let p = try await store.create(title: "T", theme: nil, text: Self.text)
+            await #expect(throws: AppFailure.self) {
+                _ = try await store.revise(folderName: p.folderName, title: "T", theme: nil, text: " \n\n ")
+            }
+            let reloaded = try await store.load(folderName: p.folderName)
+            #expect(reloaded.passage == p.passage)
+        }
+    }
+
+    /// `writePassage` merges only title and theme when the file changed underneath, which
+    /// would silently drop a text revision. `revise` reads fresh and must not lose it.
+    @Test("revising after passage.json changed underneath still writes the new text")
+    func reviseAfterExternalChange() async throws {
+        try await withStore { store, root in
+            let p = try await store.create(title: "T", theme: nil, text: Self.text)
+            _ = try await store.load(folderName: p.folderName)
+            let json = Paths.passageJSON(in: root.appendingPathComponent(p.folderName))
+            try FileManager.default.setAttributes(
+                [.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: json.path)
+
+            let after = try await store.revise(folderName: p.folderName, title: "T", theme: nil, text: "A new start.")
+            #expect(try await store.load(folderName: after.folderName).passage.sourceText == "A new start.")
+        }
+    }
+
+    @Test("summaries do not count takes whose sentence was removed")
+    func summaryIgnoresOrphans() async throws {
+        try await withStore { store, _ in
+            let p = try await store.create(title: "T", theme: nil, text: Self.text)
+            let s0 = TargetRef.sentence(p.passage.sentences[0].id)
+            let s1 = TargetRef.sentence(p.passage.sentences[1].id)
+            _ = try await store.appendTake(makeTake(for: s0), to: p.folderName)
+            _ = try await store.appendTake(makeTake(for: s1), to: p.folderName)
+
+            let after = try await store.revise(
+                folderName: p.folderName, title: "T", theme: nil,
+                text: Self.text.replacingOccurrences(of: " It sat looking over harbor.", with: ""))
+            #expect(after.takes.count == 2, "the recording stays on disk")
+            #expect(after.orphanedTakes.count == 1)
+            #expect(try await store.scanSummaries().first?.takeCount == 1)
+        }
+    }
 }
